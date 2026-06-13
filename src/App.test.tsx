@@ -87,6 +87,20 @@ test("recalculates purchase price when amount invested and purchase shares are e
   expect(screen.getByLabelText(/purchase price/i)).toHaveValue(50000);
 });
 
+test("rounds auto-calculated purchase price to the supported input precision", async () => {
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await user.selectOptions(screen.getByLabelText(/asset/i), "ADA");
+  await user.type(screen.getByLabelText(/amount invested/i), "5000");
+  await user.type(screen.getByLabelText(/purchase shares/i), "30010.94");
+
+  expect(screen.getByLabelText(/purchase price/i)).toHaveDisplayValue(
+    "0.16660591"
+  );
+});
+
 test("shows holdings, allocation, and history after a transaction is added", async () => {
   const user = userEvent.setup();
 

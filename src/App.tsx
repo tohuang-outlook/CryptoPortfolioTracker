@@ -23,9 +23,9 @@ export default function App() {
     <main className="app-shell">
       <section className="dashboard-shell">
         <header className="hero-card">
-          <div>
+          <div className="hero-copy-block">
             <p className="eyebrow">Calm portfolio tracking</p>
-            <h1>Crypto Portfolio Tracker</h1>
+            <h1 className="hero-title">Crypto Portfolio Tracker</h1>
             <p className="hero-copy">
               Track your crypto portfolio with clarity, confidence, and less
               stress.

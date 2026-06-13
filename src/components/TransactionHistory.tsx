@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { SUPPORTED_ASSETS } from "../constants/assets";
+import { formatPurchaseFieldValue } from "./purchaseFieldMath";
 import type {
   PurchaseField,
   Transaction,
@@ -174,14 +175,18 @@ function EditableTransactionRow({
     if (field === "purchasePrice" && nextPurchasePrice > 0) {
       return {
         ...nextForm,
-        purchaseShares: String(nextAmountInvested / nextPurchasePrice)
+        purchaseShares: formatPurchaseFieldValue(
+          nextAmountInvested / nextPurchasePrice
+        )
       };
     }
 
     if (field === "purchaseShares" && nextPurchaseShares > 0) {
       return {
         ...nextForm,
-        purchasePrice: String(nextAmountInvested / nextPurchaseShares)
+        purchasePrice: formatPurchaseFieldValue(
+          nextAmountInvested / nextPurchaseShares
+        )
       };
     }
 

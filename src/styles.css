@@ -59,6 +59,11 @@ textarea {
   align-items: flex-start;
 }
 
+.hero-copy-block {
+  flex: 1;
+  min-width: 0;
+}
+
 .eyebrow {
   margin: 0 0 16px;
   color: #2a7a71;
@@ -70,10 +75,14 @@ textarea {
 
 h1 {
   margin: 0;
-  max-width: 12ch;
   font-size: clamp(2.8rem, 8vw, 5.5rem);
   line-height: 0.95;
   letter-spacing: -0.06em;
+}
+
+.hero-title {
+  max-width: none;
+  white-space: nowrap;
 }
 
 .hero-copy {
@@ -411,6 +420,10 @@ button:hover {
   .hero-card {
     border-radius: 24px;
     flex-direction: column;
+  }
+
+  .hero-title {
+    white-space: normal;
   }
 
   .summary-grid {
