@@ -36,6 +36,93 @@ describe("transactionRepository", () => {
     const repo = createTransactionRepository();
     expect(repo.loadAll()).toEqual([]);
   });
+
+  it("returns an empty array when localStorage access throws during load", () => {
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new Error("SecurityError");
+      },
+      configurable: true
+    });
+
+    const repo = createTransactionRepository();
+    expect(repo.loadAll()).toEqual([]);
+  });
+
+  it("fails safely when localStorage throws during save", () => {
+    const storage = createStorageMock();
+    storage.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+
+    Object.defineProperty(window, "localStorage", {
+      value: storage,
+      configurable: true
+    });
+
+    const repo = createTransactionRepository();
+
+    expect(() =>
+      repo.saveAll([
+        {
+          id: "btc-1",
+          assetSymbol: "BTC",
+          assetName: "Bitcoin",
+          type: "buy",
+          amountInvested: 1000,
+          purchasePrice: 50000,
+          quantity: 0.02,
+          purchaseDate: "2026-06-01",
+          notes: "",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z"
+        }
+      ])
+    ).not.toThrow();
+  });
+
+  it("filters out structurally invalid persisted rows", () => {
+    window.localStorage.setItem(
+      "crypto-portfolio-transactions",
+      JSON.stringify([
+        {
+          id: "btc-1",
+          assetSymbol: "BTC",
+          assetName: "Bitcoin",
+          type: "buy",
+          amountInvested: 1000,
+          purchasePrice: 50000,
+          quantity: 0.02,
+          purchaseDate: "2026-06-01",
+          notes: "",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z"
+        },
+        {
+          id: 123,
+          assetSymbol: "BTC"
+        }
+      ])
+    );
+
+    const repo = createTransactionRepository();
+
+    expect(repo.loadAll()).toEqual([
+      {
+        id: "btc-1",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "buy",
+        amountInvested: 1000,
+        purchasePrice: 50000,
+        quantity: 0.02,
+        purchaseDate: "2026-06-01",
+        notes: "",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      }
+    ]);
+  });
 });
 
 function createStorageMock(): Storage {
