@@ -340,6 +340,50 @@ test("deletes an existing transaction after confirmation", async () => {
   ).toBeInTheDocument();
 });
 
+test("cancels inline edit without changing stored values", async () => {
+  const user = userEvent.setup();
+  seedSingleBtcTransaction();
+
+  render(<App />);
+
+  const history = screen.getByRole("region", { name: /transaction history/i });
+  await user.click(
+    within(history).getByRole("button", { name: /edit bitcoin/i })
+  );
+  await user.clear(within(history).getByLabelText(/amount invested/i));
+  await user.type(within(history).getByLabelText(/amount invested/i), "1800");
+  await user.click(
+    within(history).getByRole("button", { name: /cancel edit bitcoin/i })
+  );
+
+  const summary = screen.getByLabelText(/portfolio summary/i);
+  expect(within(summary).getByText("$1,000.00")).toBeInTheDocument();
+  expect(screen.queryByDisplayValue("1800")).not.toBeInTheDocument();
+});
+
+test("requires delete confirmation and supports cancel", async () => {
+  const user = userEvent.setup();
+  seedSingleBtcTransaction();
+
+  render(<App />);
+
+  const history = screen.getByRole("region", { name: /transaction history/i });
+  await user.click(
+    within(history).getByRole("button", { name: /delete bitcoin/i })
+  );
+
+  expect(within(history).getByText(/confirm deletion/i)).toBeInTheDocument();
+
+  await user.click(
+    within(history).getByRole("button", { name: /cancel delete bitcoin/i })
+  );
+
+  expect(within(history).getByText(/bitcoin/i)).toBeInTheDocument();
+  expect(
+    within(history).queryByText(/confirm deletion/i)
+  ).not.toBeInTheDocument();
+});
+
 function seedSingleBtcTransaction() {
   window.localStorage.setItem(
     "crypto-portfolio-transactions",

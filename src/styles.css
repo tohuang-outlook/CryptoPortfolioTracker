@@ -300,6 +300,16 @@ h1 {
   border-bottom: none;
 }
 
+.history-item--editing {
+  display: block;
+}
+
+.history-item__side {
+  display: grid;
+  gap: 12px;
+  justify-items: end;
+}
+
 .history-item__amounts {
   text-align: right;
   white-space: nowrap;
@@ -307,6 +317,33 @@ h1 {
 
 .history-item__amounts p {
   margin: 0;
+}
+
+.history-item__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.history-item__confirm,
+.history-item__derived {
+  margin-top: 12px;
+}
+
+.history-item__confirm p,
+.history-item__derived {
+  color: #4e666b;
+}
+
+.history-edit-form {
+  gap: 16px;
+}
+
+.history-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 form {
@@ -356,6 +393,16 @@ button:hover {
   filter: brightness(1.03);
 }
 
+.button-secondary {
+  background: rgba(232, 241, 239, 0.95);
+  color: #234148;
+}
+
+.button-danger,
+.button-danger-soft {
+  background: linear-gradient(135deg, #b2573f 0%, #c26b49 100%);
+}
+
 @media (max-width: 720px) {
   .app-shell {
     padding: 16px;
@@ -386,7 +433,15 @@ button:hover {
     flex-direction: column;
   }
 
+  .history-item__side {
+    justify-items: start;
+  }
+
   .history-item__amounts {
     text-align: left;
+  }
+
+  .history-edit-grid {
+    grid-template-columns: 1fr;
   }
 }
