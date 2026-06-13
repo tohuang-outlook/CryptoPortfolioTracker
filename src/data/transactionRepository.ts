@@ -50,10 +50,10 @@ function isTransaction(value: unknown): value is Transaction {
     isSupportedAssetSymbol(value.assetSymbol) &&
     typeof value.assetName === "string" &&
     value.type === "buy" &&
-    isFiniteNumber(value.amountInvested) &&
-    isFiniteNumber(value.purchasePrice) &&
-    isFiniteNumber(value.quantity) &&
-    typeof value.purchaseDate === "string" &&
+    isPositiveNumber(value.amountInvested) &&
+    isPositiveNumber(value.purchasePrice) &&
+    isPositiveNumber(value.quantity) &&
+    isValidPurchaseDate(value.purchaseDate) &&
     typeof value.notes === "string" &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
@@ -68,6 +68,14 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function isPositiveNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value > 0;
+}
+
 function isSupportedAssetSymbol(value: unknown): value is Transaction["assetSymbol"] {
   return SUPPORTED_ASSETS.some((asset) => asset.symbol === value);
+}
+
+function isValidPurchaseDate(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && !Number.isNaN(Date.parse(value));
 }

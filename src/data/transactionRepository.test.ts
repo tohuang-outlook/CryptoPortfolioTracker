@@ -123,6 +123,58 @@ describe("transactionRepository", () => {
       }
     ]);
   });
+
+  it("filters out persisted rows with invalid transaction values", () => {
+    window.localStorage.setItem(
+      "crypto-portfolio-transactions",
+      JSON.stringify([
+        {
+          id: "btc-1",
+          assetSymbol: "BTC",
+          assetName: "Bitcoin",
+          type: "buy",
+          amountInvested: 1000,
+          purchasePrice: 50000,
+          quantity: 0.02,
+          purchaseDate: "2026-06-01",
+          notes: "",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z"
+        },
+        {
+          id: "bad-1",
+          assetSymbol: "ETH",
+          assetName: "Ethereum",
+          type: "buy",
+          amountInvested: 0,
+          purchasePrice: -1,
+          quantity: 0,
+          purchaseDate: "",
+          notes: "",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z"
+        }
+      ])
+    );
+
+    const repo = createTransactionRepository();
+
+    expect(repo.loadAll()).toEqual([
+      {
+        id: "btc-1",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "buy",
+        amountInvested: 1000,
+        purchasePrice: 50000,
+        quantity: 0.02,
+        purchaseDate: "2026-06-01",
+        notes: "",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      }
+    ]);
+  });
 });
 
 function createStorageMock(): Storage {
