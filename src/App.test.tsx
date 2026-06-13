@@ -384,6 +384,122 @@ test("requires delete confirmation and supports cancel", async () => {
   ).not.toBeInTheDocument();
 });
 
+test("shows an inline error when edited transaction persistence fails", async () => {
+  const storage = createStorageMock();
+  storage.setItem(
+    "crypto-portfolio-transactions",
+    JSON.stringify([
+      {
+        id: "btc-1",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "buy",
+        amountInvested: 1000,
+        purchasePrice: 50000,
+        quantity: 0.02,
+        purchaseDate: "2026-06-01",
+        notes: "starter",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      }
+    ])
+  );
+  storage.setItem = () => {
+    throw new Error("QuotaExceededError");
+  };
+  Object.defineProperty(window, "localStorage", {
+    value: storage,
+    configurable: true
+  });
+
+  const user = userEvent.setup();
+  render(<App />);
+
+  const history = screen.getByRole("region", { name: /transaction history/i });
+  await user.click(
+    within(history).getByRole("button", { name: /edit bitcoin/i })
+  );
+  await user.clear(within(history).getByLabelText(/amount invested/i));
+  await user.type(within(history).getByLabelText(/amount invested/i), "1500");
+  await user.click(within(history).getByRole("button", { name: /save bitcoin/i }));
+
+  expect(
+    within(history).getByText(/unable to save transaction/i)
+  ).toBeInTheDocument();
+  expect(within(history).getByDisplayValue("1500")).toBeInTheDocument();
+});
+
+test("shows an inline error when delete persistence fails", async () => {
+  const storage = createStorageMock();
+  storage.setItem(
+    "crypto-portfolio-transactions",
+    JSON.stringify([
+      {
+        id: "btc-1",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "buy",
+        amountInvested: 1000,
+        purchasePrice: 50000,
+        quantity: 0.02,
+        purchaseDate: "2026-06-01",
+        notes: "starter",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      }
+    ])
+  );
+  storage.setItem = () => {
+    throw new Error("QuotaExceededError");
+  };
+  Object.defineProperty(window, "localStorage", {
+    value: storage,
+    configurable: true
+  });
+
+  const user = userEvent.setup();
+  render(<App />);
+
+  const history = screen.getByRole("region", { name: /transaction history/i });
+  await user.click(
+    within(history).getByRole("button", { name: /delete bitcoin/i })
+  );
+  await user.click(
+    within(history).getByRole("button", { name: /confirm delete bitcoin/i })
+  );
+
+  expect(
+    within(history).getByText(/unable to save transaction/i)
+  ).toBeInTheDocument();
+  expect(within(history).getByText(/bitcoin/i)).toBeInTheDocument();
+});
+
+test("only one transaction can be in edit mode at a time", async () => {
+  seedTwoTransactions();
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  const history = screen.getByRole("region", { name: /transaction history/i });
+  await user.click(
+    within(history).getByRole("button", { name: /edit bitcoin/i })
+  );
+  expect(
+    within(history).getByRole("button", { name: /save bitcoin/i })
+  ).toBeInTheDocument();
+
+  await user.click(
+    within(history).getByRole("button", { name: /edit ethereum/i })
+  );
+
+  expect(
+    within(history).queryByRole("button", { name: /save bitcoin/i })
+  ).not.toBeInTheDocument();
+  expect(
+    within(history).getByRole("button", { name: /save ethereum/i })
+  ).toBeInTheDocument();
+});
+
 function seedSingleBtcTransaction() {
   window.localStorage.setItem(
     "crypto-portfolio-transactions",
@@ -400,6 +516,40 @@ function seedSingleBtcTransaction() {
         notes: "starter",
         createdAt: "2026-06-01T00:00:00.000Z",
         updatedAt: "2026-06-01T00:00:00.000Z"
+      }
+    ])
+  );
+}
+
+function seedTwoTransactions() {
+  window.localStorage.setItem(
+    "crypto-portfolio-transactions",
+    JSON.stringify([
+      {
+        id: "btc-1",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "buy",
+        amountInvested: 1000,
+        purchasePrice: 50000,
+        quantity: 0.02,
+        purchaseDate: "2026-06-01",
+        notes: "starter",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      },
+      {
+        id: "eth-1",
+        assetSymbol: "ETH",
+        assetName: "Ethereum",
+        type: "buy",
+        amountInvested: 4000,
+        purchasePrice: 2000,
+        quantity: 2,
+        purchaseDate: "2026-06-02",
+        notes: "",
+        createdAt: "2026-06-02T00:00:00.000Z",
+        updatedAt: "2026-06-02T00:00:00.000Z"
       }
     ])
   );
