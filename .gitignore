@@ -3,5 +3,6 @@ dist-electron/
 electron-dist/
 .vite/
 .swift-module-cache/
+build-assets/mac/icon.tiff
 node_modules/
 tsconfig.tsbuildinfo
