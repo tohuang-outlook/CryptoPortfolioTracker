@@ -25,8 +25,12 @@ export function createTransactionRepository() {
     saveAll(transactions: Transaction[]) {
       try {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+        return { success: true as const };
       } catch {
-        // Swallow storage failures so persistence does not crash the app.
+        return {
+          success: false as const,
+          error: "Unable to save transaction. Please try again."
+        };
       }
     }
   };

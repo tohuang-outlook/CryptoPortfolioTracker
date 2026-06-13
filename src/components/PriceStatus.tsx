@@ -6,16 +6,32 @@ export function PriceStatus({
   lastUpdated: string | null;
 }) {
   if (status === "loading") {
-    return <p>Loading live prices...</p>;
+    return (
+      <p role="status" aria-live="polite" aria-atomic="true">
+        Loading live prices...
+      </p>
+    );
   }
 
   if (status === "error") {
-    return <p>Live prices are temporarily unavailable.</p>;
+    return (
+      <p role="alert" aria-live="assertive" aria-atomic="true">
+        Live prices are temporarily unavailable.
+      </p>
+    );
   }
 
   if (status === "ready" && lastUpdated) {
-    return <p>Live prices updated.</p>;
+    return (
+      <p role="status" aria-live="polite" aria-atomic="true">
+        Live prices updated.
+      </p>
+    );
   }
 
-  return <p>Waiting for live prices.</p>;
+  return (
+    <p role="status" aria-live="polite" aria-atomic="true">
+      Waiting for live prices.
+    </p>
+  );
 }

@@ -62,11 +62,14 @@ export function usePortfolio(prices: PriceMap) {
       updatedAt: timestamp
     };
 
-    setTransactions((currentTransactions) => {
-      const updatedTransactions = [nextTransaction, ...currentTransactions];
-      repository.saveAll(updatedTransactions);
-      return updatedTransactions;
-    });
+    const updatedTransactions = [nextTransaction, ...transactions];
+    const saveResult = repository.saveAll(updatedTransactions);
+
+    if (!saveResult.success) {
+      return saveResult;
+    }
+
+    setTransactions(updatedTransactions);
 
     return { success: true };
   }

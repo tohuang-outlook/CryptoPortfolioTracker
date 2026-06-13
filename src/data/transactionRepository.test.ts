@@ -12,21 +12,7 @@ describe("transactionRepository", () => {
 
   it("persists and reads transactions", () => {
     const repo = createTransactionRepository();
-    repo.saveAll([
-      {
-        id: "btc-1",
-        assetSymbol: "BTC",
-        assetName: "Bitcoin",
-        type: "buy",
-        amountInvested: 1000,
-        purchasePrice: 50000,
-        quantity: 0.02,
-        purchaseDate: "2026-06-01",
-        notes: "",
-        createdAt: "2026-06-01T00:00:00.000Z",
-        updatedAt: "2026-06-01T00:00:00.000Z"
-      }
-    ]);
+    expect(repo.saveAll([validTransaction()])).toEqual({ success: true });
 
     expect(repo.loadAll()).toHaveLength(1);
   });
@@ -49,7 +35,7 @@ describe("transactionRepository", () => {
     expect(repo.loadAll()).toEqual([]);
   });
 
-  it("fails safely when localStorage throws during save", () => {
+  it("returns a failure result when localStorage throws during save", () => {
     const storage = createStorageMock();
     storage.setItem = () => {
       throw new Error("QuotaExceededError");
@@ -62,23 +48,10 @@ describe("transactionRepository", () => {
 
     const repo = createTransactionRepository();
 
-    expect(() =>
-      repo.saveAll([
-        {
-          id: "btc-1",
-          assetSymbol: "BTC",
-          assetName: "Bitcoin",
-          type: "buy",
-          amountInvested: 1000,
-          purchasePrice: 50000,
-          quantity: 0.02,
-          purchaseDate: "2026-06-01",
-          notes: "",
-          createdAt: "2026-06-01T00:00:00.000Z",
-          updatedAt: "2026-06-01T00:00:00.000Z"
-        }
-      ])
-    ).not.toThrow();
+    expect(repo.saveAll([validTransaction()])).toEqual({
+      success: false,
+      error: "Unable to save transaction. Please try again."
+    });
   });
 
   it("filters out structurally invalid persisted rows", () => {
@@ -199,5 +172,21 @@ function createStorageMock(): Storage {
     setItem(key, value) {
       store.set(key, value);
     }
+  };
+}
+
+function validTransaction() {
+  return {
+    id: "btc-1",
+    assetSymbol: "BTC" as const,
+    assetName: "Bitcoin",
+    type: "buy" as const,
+    amountInvested: 1000,
+    purchasePrice: 50000,
+    quantity: 0.02,
+    purchaseDate: "2026-06-01",
+    notes: "",
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z"
   };
 }

@@ -15,6 +15,7 @@ beforeEach(() => {
     value: createStorageMock(),
     configurable: true
   });
+  vi.clearAllMocks();
   mockedUsePrices.mockReturnValue({
     prices: {
       BTC: 60000,
@@ -51,7 +52,55 @@ test("adds a BTC transaction and updates dashboard totals", async () => {
   expect(screen.getByText("0.02000000 BTC")).toBeInTheDocument();
 });
 
-function createStorageMock(): Storage {
+test("hydrates totals and holdings from persisted transactions", () => {
+  window.localStorage.setItem(
+    "crypto-portfolio-transactions",
+    JSON.stringify([
+      {
+        id: "btc-1",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "buy",
+        amountInvested: 1000,
+        purchasePrice: 50000,
+        quantity: 0.02,
+        purchaseDate: "2026-06-01",
+        notes: "",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      }
+    ])
+  );
+
+  render(<App />);
+
+  expect(screen.getByText("$1,000.00")).toBeInTheDocument();
+  expect(screen.getByText("0.02000000 BTC")).toBeInTheDocument();
+});
+
+test("shows an error and does not update totals when persistence fails", async () => {
+  const user = userEvent.setup();
+
+  Object.defineProperty(window, "localStorage", {
+    value: createStorageMock({ failOnSet: true }),
+    configurable: true
+  });
+
+  render(<App />);
+
+  await user.type(screen.getByLabelText(/amount invested/i), "1000");
+  await user.type(screen.getByLabelText(/purchase price/i), "50000");
+  await user.type(screen.getByLabelText(/purchase date/i), "2026-06-01");
+  await user.click(screen.getByRole("button", { name: /save transaction/i }));
+
+  expect(
+    screen.getByText(/unable to save transaction/i)
+  ).toBeInTheDocument();
+  expect(screen.queryByText("$1,000.00")).not.toBeInTheDocument();
+  expect(screen.queryByText("0.02000000 BTC")).not.toBeInTheDocument();
+});
+
+function createStorageMock(options?: { failOnSet?: boolean }): Storage {
   const store = new Map<string, string>();
 
   return {
@@ -71,6 +120,9 @@ function createStorageMock(): Storage {
       store.delete(key);
     },
     setItem(key, value) {
+      if (options?.failOnSet) {
+        throw new Error("QuotaExceededError");
+      }
       store.set(key, value);
     }
   };

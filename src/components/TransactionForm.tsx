@@ -73,7 +73,11 @@ export function TransactionForm({
         <label>
           Amount Invested
           <input
+            type="number"
             inputMode="decimal"
+            min="0.01"
+            step="0.01"
+            required
             value={form.amountInvested}
             onChange={(event) =>
               setForm((currentForm) => ({
@@ -87,7 +91,11 @@ export function TransactionForm({
         <label>
           Purchase Price
           <input
+            type="number"
             inputMode="decimal"
+            min="0.00000001"
+            step="0.00000001"
+            required
             value={form.purchasePrice}
             onChange={(event) =>
               setForm((currentForm) => ({
@@ -102,6 +110,7 @@ export function TransactionForm({
           Purchase Date
           <input
             type="date"
+            required
             value={form.purchaseDate}
             onChange={(event) =>
               setForm((currentForm) => ({
