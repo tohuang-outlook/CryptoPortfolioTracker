@@ -219,6 +219,148 @@ test("keeps both transactions when one event submits twice quickly", async () =>
   expect(within(historyItems[1]).getByText(/bitcoin/i)).toBeInTheDocument();
 });
 
+test("edits an existing transaction and updates portfolio summary", async () => {
+  vi.resetModules();
+  vi.doMock("./hooks/usePrices", () => ({
+    usePrices: () => ({
+      prices: {
+        BTC: 60000,
+        ETH: 2500,
+        SOL: 150,
+        XRP: 1.1,
+        ADA: 0.45,
+        DOGE: 0.2
+      },
+      status: "ready",
+      lastUpdated: "2026-06-13T12:00:00.000Z"
+    })
+  }));
+  vi.doMock("./components/TransactionHistory", () => ({
+    TransactionHistory: ({
+      onUpdateTransaction
+    }: {
+      onUpdateTransaction: (values: {
+        id: string;
+        assetSymbol: string;
+        amountInvested: string;
+        purchasePrice: string;
+        purchaseDate: string;
+        notes: string;
+      }) => { success: true } | { success: false; error: string };
+    }) => (
+      <button
+        type="button"
+        onClick={() =>
+          onUpdateTransaction({
+            id: "btc-1",
+            assetSymbol: "BTC",
+            amountInvested: "1500",
+            purchasePrice: "50000",
+            purchaseDate: "2026-06-01",
+            notes: "starter"
+          })
+        }
+      >
+        Trigger Edit Bitcoin
+      </button>
+    )
+  }));
+
+  seedSingleBtcTransaction();
+  const { default: EditApp } = await import("./App");
+  const user = userEvent.setup();
+
+  render(<EditApp />);
+
+  await user.click(screen.getByRole("button", { name: /trigger edit bitcoin/i }));
+
+  const summary = screen.getByLabelText(/portfolio summary/i);
+  expect(within(summary).getByText("$1,500.00")).toBeInTheDocument();
+});
+
+test("deletes an existing transaction after confirmation", async () => {
+  vi.resetModules();
+  vi.doMock("./hooks/usePrices", () => ({
+    usePrices: () => ({
+      prices: {
+        BTC: 60000,
+        ETH: 2500,
+        SOL: 150,
+        XRP: 1.1,
+        ADA: 0.45,
+        DOGE: 0.2
+      },
+      status: "ready",
+      lastUpdated: "2026-06-13T12:00:00.000Z"
+    })
+  }));
+  vi.doMock("./components/TransactionHistory", () => ({
+    TransactionHistory: ({
+      onDeleteTransaction
+    }: {
+      onDeleteTransaction: (id: string) => { success: true } | { success: false; error: string };
+    }) => (
+      <button
+        type="button"
+        onClick={() => onDeleteTransaction("eth-1")}
+      >
+        Confirm Delete Ethereum
+      </button>
+    )
+  }));
+
+  window.localStorage.setItem(
+    "crypto-portfolio-transactions",
+    JSON.stringify([
+      {
+        id: "eth-1",
+        assetSymbol: "ETH",
+        assetName: "Ethereum",
+        type: "buy",
+        amountInvested: 4000,
+        purchasePrice: 2000,
+        quantity: 2,
+        purchaseDate: "2026-06-02",
+        notes: "",
+        createdAt: "2026-06-02T00:00:00.000Z",
+        updatedAt: "2026-06-02T00:00:00.000Z"
+      }
+    ])
+  );
+
+  const { default: DeleteApp } = await import("./App");
+  const user = userEvent.setup();
+
+  render(<DeleteApp />);
+
+  await user.click(screen.getByRole("button", { name: /confirm delete ethereum/i }));
+
+  expect(
+    screen.getByRole("heading", { name: /add your first crypto buy/i })
+  ).toBeInTheDocument();
+});
+
+function seedSingleBtcTransaction() {
+  window.localStorage.setItem(
+    "crypto-portfolio-transactions",
+    JSON.stringify([
+      {
+        id: "btc-1",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "buy",
+        amountInvested: 1000,
+        purchasePrice: 50000,
+        quantity: 0.02,
+        purchaseDate: "2026-06-01",
+        notes: "starter",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      }
+    ])
+  );
+}
+
 function createStorageMock(options?: { failOnSet?: boolean }): Storage {
   const store = new Map<string, string>();
 

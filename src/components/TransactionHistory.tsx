@@ -4,6 +4,15 @@ export function TransactionHistory({
   transactions
 }: {
   transactions: Transaction[];
+  onUpdateTransaction?: (input: {
+    id: string;
+    assetSymbol: string;
+    amountInvested: string;
+    purchasePrice: string;
+    purchaseDate: string;
+    notes: string;
+  }) => { success: true } | { success: false; error: string };
+  onDeleteTransaction?: (id: string) => { success: true } | { success: false; error: string };
 }) {
   const orderedTransactions = [...transactions].sort((left, right) => {
     const leftTimestamp = Date.parse(left.createdAt || left.purchaseDate);

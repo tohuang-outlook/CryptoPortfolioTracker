@@ -11,7 +11,13 @@ import { usePrices } from "./hooks/usePrices";
 
 export default function App() {
   const { prices, status, lastUpdated } = usePrices();
-  const { transactions, snapshot, addTransaction } = usePortfolio(prices);
+  const {
+    transactions,
+    snapshot,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction
+  } = usePortfolio(prices);
 
   return (
     <main className="app-shell">
@@ -38,7 +44,11 @@ export default function App() {
             {transactions.length === 0 ? (
               <EmptyState />
             ) : (
-              <TransactionHistory transactions={transactions} />
+              <TransactionHistory
+                transactions={transactions}
+                onUpdateTransaction={updateTransaction}
+                onDeleteTransaction={deleteTransaction}
+              />
             )}
           </div>
 

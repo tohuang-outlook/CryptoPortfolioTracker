@@ -1,12 +1,7 @@
 import { SUPPORTED_ASSETS } from "../constants/assets";
+import type { TransactionFormInput } from "../types/portfolio";
 
-export function validateTransactionInput(input: {
-  assetSymbol: string;
-  amountInvested: string;
-  purchasePrice: string;
-  purchaseDate: string;
-  notes: string;
-}) {
+export function validateTransactionInput(input: TransactionFormInput) {
   const amountInvested = Number(input.amountInvested);
   const purchasePrice = Number(input.purchasePrice);
   const supported = SUPPORTED_ASSETS.some((asset) => asset.symbol === input.assetSymbol);

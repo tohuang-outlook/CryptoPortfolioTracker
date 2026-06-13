@@ -22,6 +22,14 @@ export interface Transaction {
   updatedAt: string;
 }
 
+export interface TransactionFormInput {
+  assetSymbol: string;
+  amountInvested: string;
+  purchasePrice: string;
+  purchaseDate: string;
+  notes: string;
+}
+
 export type PriceMap = Record<SupportedAssetSymbol, number>;
 
 export interface AssetSummary {
