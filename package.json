@@ -2,10 +2,14 @@
   "name": "crypto-portfolio-tracker",
   "private": true,
   "version": "0.1.0",
+  "main": "electron-dist/electron/main.js",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "electron:compile": "tsc -p tsconfig.electron.json",
+    "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 5273 --strictPort\" \"wait-on http://127.0.0.1:5273 && node scripts/launch-electron.mjs\"",
+    "desktop:build": "npm run build && npm run electron:compile && electron-builder --mac dmg",
     "test": "vitest",
     "test:run": "vitest run"
   },
@@ -18,12 +22,37 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^25.9.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^10.0.3",
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3",
     "jsdom": "^25.0.1",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "appId": "com.tonyhuang.cryptoportfoliotracker",
+    "productName": "Crypto Portfolio Tracker",
+    "files": [
+      "dist/**/*",
+      "electron-dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.finance"
+    }
   }
 }
