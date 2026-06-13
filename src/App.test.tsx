@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
 import App from "./App";
 import { usePrices } from "./hooks/usePrices";
 
@@ -9,6 +9,12 @@ vi.mock("./hooks/usePrices", () => ({
 }));
 
 const mockedUsePrices = vi.mocked(usePrices);
+
+afterEach(() => {
+  vi.resetModules();
+  vi.doUnmock("./components/TransactionForm");
+  vi.doUnmock("./hooks/usePrices");
+});
 
 beforeEach(() => {
   Object.defineProperty(window, "localStorage", {
@@ -98,6 +104,72 @@ test("shows an error and does not update totals when persistence fails", async (
   ).toBeInTheDocument();
   expect(screen.queryByText("$1,000.00")).not.toBeInTheDocument();
   expect(screen.queryByText("0.02000000 BTC")).not.toBeInTheDocument();
+});
+
+test("keeps both transactions when one event submits twice quickly", async () => {
+  vi.resetModules();
+  vi.doMock("./hooks/usePrices", () => ({
+    usePrices: () => ({
+      prices: {
+        BTC: 60000,
+        ETH: 2500,
+        SOL: 150,
+        XRP: 1.1,
+        ADA: 0.45,
+        DOGE: 0.2
+      },
+      status: "ready",
+      lastUpdated: "2026-06-13T12:00:00.000Z"
+    })
+  }));
+  vi.doMock("./components/TransactionForm", () => ({
+    TransactionForm: ({
+      onSubmit
+    }: {
+      onSubmit: (values: {
+        assetSymbol: string;
+        amountInvested: string;
+        purchasePrice: string;
+        purchaseDate: string;
+        notes: string;
+      }) => { success: true } | { success: false; error: string };
+    }) => (
+      <button
+        type="button"
+        onClick={() => {
+          onSubmit({
+            assetSymbol: "BTC",
+            amountInvested: "1000",
+            purchasePrice: "50000",
+            purchaseDate: "2026-06-01",
+            notes: ""
+          });
+          onSubmit({
+            assetSymbol: "ETH",
+            amountInvested: "4000",
+            purchasePrice: "2000",
+            purchaseDate: "2026-06-02",
+            notes: ""
+          });
+        }}
+      >
+        Trigger Double Submit
+      </button>
+    )
+  }));
+
+  const { default: DoubleSubmitApp } = await import("./App");
+  const user = userEvent.setup();
+
+  render(<DoubleSubmitApp />);
+
+  await user.click(
+    screen.getByRole("button", { name: /trigger double submit/i })
+  );
+
+  expect(screen.getByText("$5,000.00")).toBeInTheDocument();
+  expect(screen.getByText("0.02000000 BTC")).toBeInTheDocument();
+  expect(screen.getByText("2.00000000 ETH")).toBeInTheDocument();
 });
 
 function createStorageMock(options?: { failOnSet?: boolean }): Storage {

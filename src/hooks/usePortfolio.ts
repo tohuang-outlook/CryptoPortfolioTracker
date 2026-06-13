@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SUPPORTED_ASSETS } from "../constants/assets";
 import { createTransactionRepository } from "../data/transactionRepository";
 import { buildPortfolioSnapshot } from "../domain/portfolio";
@@ -23,6 +23,11 @@ export function usePortfolio(prices: PriceMap) {
   const [transactions, setTransactions] = useState<Transaction[]>(() =>
     repository.loadAll()
   );
+  const transactionsRef = useRef(transactions);
+
+  useEffect(() => {
+    transactionsRef.current = transactions;
+  }, [transactions]);
 
   const snapshot = useMemo(
     () => buildPortfolioSnapshot(transactions, prices),
@@ -62,13 +67,14 @@ export function usePortfolio(prices: PriceMap) {
       updatedAt: timestamp
     };
 
-    const updatedTransactions = [nextTransaction, ...transactions];
+    const updatedTransactions = [nextTransaction, ...transactionsRef.current];
     const saveResult = repository.saveAll(updatedTransactions);
 
     if (!saveResult.success) {
       return saveResult;
     }
 
+    transactionsRef.current = updatedTransactions;
     setTransactions(updatedTransactions);
 
     return { success: true };
