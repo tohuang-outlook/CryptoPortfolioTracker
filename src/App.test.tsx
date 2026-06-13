@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, vi } from "vitest";
 import App from "./App";
@@ -43,6 +43,17 @@ test("renders the portfolio tracker heading", () => {
   ).toBeInTheDocument();
 });
 
+test("shows an empty-state message before any transactions are added", () => {
+  render(<App />);
+
+  expect(
+    screen.getByRole("heading", { name: /add your first crypto buy/i })
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: /^holdings$/i })
+  ).not.toBeInTheDocument();
+});
+
 test("adds a BTC transaction and updates dashboard totals", async () => {
   const user = userEvent.setup();
 
@@ -54,8 +65,30 @@ test("adds a BTC transaction and updates dashboard totals", async () => {
   await user.type(screen.getByLabelText(/purchase date/i), "2026-06-01");
   await user.click(screen.getByRole("button", { name: /save transaction/i }));
 
-  expect(screen.getByText("$1,000.00")).toBeInTheDocument();
-  expect(screen.getByText("0.02000000 BTC")).toBeInTheDocument();
+  const summary = screen.getByLabelText(/portfolio summary/i);
+  const holdings = screen.getByRole("region", { name: /^holdings$/i });
+
+  expect(within(summary).getByText("$1,000.00")).toBeInTheDocument();
+  expect(within(holdings).getByText("Bitcoin")).toBeInTheDocument();
+  expect(within(holdings).getByText("0.02000000")).toBeInTheDocument();
+});
+
+test("shows holdings, allocation, and history after a transaction is added", async () => {
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await user.selectOptions(screen.getByLabelText(/asset/i), "ETH");
+  await user.type(screen.getByLabelText(/amount invested/i), "4000");
+  await user.type(screen.getByLabelText(/purchase price/i), "2000");
+  await user.type(screen.getByLabelText(/purchase date/i), "2026-06-02");
+  await user.click(screen.getByRole("button", { name: /save transaction/i }));
+
+  expect(screen.getByRole("heading", { name: /^holdings$/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /^allocation$/i })).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: /transaction history/i })
+  ).toBeInTheDocument();
 });
 
 test("hydrates totals and holdings from persisted transactions", () => {
@@ -80,8 +113,12 @@ test("hydrates totals and holdings from persisted transactions", () => {
 
   render(<App />);
 
-  expect(screen.getByText("$1,000.00")).toBeInTheDocument();
-  expect(screen.getByText("0.02000000 BTC")).toBeInTheDocument();
+  const summary = screen.getByLabelText(/portfolio summary/i);
+  const holdings = screen.getByRole("region", { name: /^holdings$/i });
+
+  expect(within(summary).getByText("$1,000.00")).toBeInTheDocument();
+  expect(within(holdings).getByText("Bitcoin")).toBeInTheDocument();
+  expect(within(holdings).getByText("0.02000000")).toBeInTheDocument();
 });
 
 test("shows an error and does not update totals when persistence fails", async () => {
@@ -167,9 +204,16 @@ test("keeps both transactions when one event submits twice quickly", async () =>
     screen.getByRole("button", { name: /trigger double submit/i })
   );
 
-  expect(screen.getByText("$5,000.00")).toBeInTheDocument();
-  expect(screen.getByText("0.02000000 BTC")).toBeInTheDocument();
-  expect(screen.getByText("2.00000000 ETH")).toBeInTheDocument();
+  const summary = screen.getByLabelText(/portfolio summary/i);
+  const history = screen.getByRole("region", { name: /transaction history/i });
+  const holdings = screen.getByRole("region", { name: /^holdings$/i });
+  const historyItems = within(history).getAllByRole("listitem");
+
+  expect(within(summary).getByText("$5,000.00")).toBeInTheDocument();
+  expect(within(holdings).getByText("0.02000000")).toBeInTheDocument();
+  expect(within(holdings).getByText("2.00000000")).toBeInTheDocument();
+  expect(within(historyItems[0]).getByText(/ethereum/i)).toBeInTheDocument();
+  expect(within(historyItems[1]).getByText(/bitcoin/i)).toBeInTheDocument();
 });
 
 function createStorageMock(options?: { failOnSet?: boolean }): Storage {

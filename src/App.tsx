@@ -1,58 +1,61 @@
 import "./styles.css";
+import { AllocationChart } from "./components/AllocationChart";
+import { EmptyState } from "./components/EmptyState";
+import { HoldingsTable } from "./components/HoldingsTable";
 import { PriceStatus } from "./components/PriceStatus";
+import { SummaryCards } from "./components/SummaryCards";
 import { TransactionForm } from "./components/TransactionForm";
+import { TransactionHistory } from "./components/TransactionHistory";
 import { usePortfolio } from "./hooks/usePortfolio";
 import { usePrices } from "./hooks/usePrices";
 
 export default function App() {
   const { prices, status, lastUpdated } = usePrices();
-  const { snapshot, addTransaction } = usePortfolio(prices);
+  const { transactions, snapshot, addTransaction } = usePortfolio(prices);
 
   return (
     <main className="app-shell">
-      <section className="hero-card">
-        <p className="eyebrow">Calm portfolio tracking</p>
-        <h1>Crypto Portfolio Tracker</h1>
-        <p className="hero-copy">
-          Track your crypto portfolio with clarity, confidence, and less
-          stress.
-        </p>
+      <section className="dashboard-shell">
+        <header className="hero-card">
+          <div>
+            <p className="eyebrow">Calm portfolio tracking</p>
+            <h1>Crypto Portfolio Tracker</h1>
+            <p className="hero-copy">
+              Track your crypto portfolio with clarity, confidence, and less
+              stress.
+            </p>
+          </div>
+          <div className="hero-status">
+            <PriceStatus status={status} lastUpdated={lastUpdated} />
+          </div>
+        </header>
 
-        <PriceStatus status={status} lastUpdated={lastUpdated} />
+        <SummaryCards portfolio={snapshot.portfolio} />
 
-        <section aria-labelledby="portfolio-summary-heading">
-          <h2 id="portfolio-summary-heading">Portfolio summary</h2>
-          <p>Total invested:</p>
-          <p>{formatCurrency(snapshot.portfolio.totalInvested)}</p>
-          <p>Portfolio value:</p>
-          <p>{formatCurrency(snapshot.portfolio.portfolioValue)}</p>
+        <section className="content-grid">
+          <div className="content-grid__primary">
+            <TransactionForm onSubmit={addTransaction} />
+            {transactions.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <TransactionHistory transactions={transactions} />
+            )}
+          </div>
+
+          <div className="content-grid__secondary">
+            {transactions.length === 0 ? (
+              <section className="panel panel--placeholder" aria-hidden="true">
+                <p>Allocation and holdings will appear after your first buy.</p>
+              </section>
+            ) : (
+              <>
+                <HoldingsTable assets={snapshot.assets} />
+                <AllocationChart assets={snapshot.assets} />
+              </>
+            )}
+          </div>
         </section>
-
-        <TransactionForm onSubmit={addTransaction} />
-
-        <section aria-labelledby="holdings-heading">
-          <h2 id="holdings-heading">Holdings</h2>
-          {snapshot.assets.length === 0 ? (
-            <p>No transactions yet.</p>
-          ) : (
-            <ul>
-              {snapshot.assets.map((asset) => (
-                <li key={asset.assetSymbol}>
-                  <p>{asset.assetName}</p>
-                  <p>{asset.totalQuantity.toFixed(8)} {asset.assetSymbol}</p>
-                </li>
-              ))}
-            </ul>
-          )}
         </section>
-      </section>
     </main>
   );
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD"
-  }).format(value);
 }
