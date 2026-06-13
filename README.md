@@ -42,6 +42,14 @@ npm run desktop:build
 
 The web bundle is written to `dist/`. The compiled Electron files are written to `electron-dist/`. Packaged macOS outputs are written to `dist-electron/`.
 
+## Regenerate The Mac App Icon
+
+```bash
+npm run icon:mac
+```
+
+This rebuilds the `.iconset` and `.icns` files from `build-assets/app-icon.png`.
+
 ## Opening The Unsigned Test Build
 
 Because this first desktop release is unsigned, macOS may block it the first time:

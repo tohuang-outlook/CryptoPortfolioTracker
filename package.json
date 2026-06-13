@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "electron:compile": "tsc -p tsconfig.electron.json",
+    "icon:mac": "mkdir -p .swift-module-cache && SWIFT_MODULECACHE_PATH=$PWD/.swift-module-cache CLANG_MODULE_CACHE_PATH=$PWD/.swift-module-cache swift scripts/render-mac-icon.swift build-assets/app-icon.png && ./scripts/generate-mac-icon.sh",
     "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 5273 --strictPort\" \"wait-on http://127.0.0.1:5273 && node scripts/launch-electron.mjs\"",
     "desktop:build": "npm run build && npm run electron:compile && electron-builder --mac dmg --universal",
     "test": "vitest",
@@ -48,6 +49,7 @@
       "package.json"
     ],
     "mac": {
+      "icon": "build-assets/mac/icon.icns",
       "target": [
         {
           "target": "dmg",
