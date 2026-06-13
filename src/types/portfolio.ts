@@ -26,9 +26,12 @@ export interface TransactionFormInput {
   assetSymbol: string;
   amountInvested: string;
   purchasePrice: string;
+  purchaseShares: string;
   purchaseDate: string;
   notes: string;
 }
+
+export type PurchaseField = "purchasePrice" | "purchaseShares";
 
 export type PriceMap = Record<SupportedAssetSymbol, number>;
 
