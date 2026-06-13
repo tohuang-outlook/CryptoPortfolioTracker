@@ -37,7 +37,7 @@ export function buildPortfolioSnapshot(
     );
     const averageBuyPrice =
       totalQuantity === 0 ? 0 : totalInvested / totalQuantity;
-    const currentPrice = prices[asset.symbol];
+    const currentPrice = prices[asset.symbol] ?? 0;
     const currentValue = totalQuantity * currentPrice;
     const unrealizedPnL = currentValue - totalInvested;
     const unrealizedPnLPercent =
