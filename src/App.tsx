@@ -42,20 +42,16 @@ export default function App() {
             )}
           </div>
 
-          <div className="content-grid__secondary">
-            {transactions.length === 0 ? (
-              <section className="panel panel--placeholder" aria-hidden="true">
-                <p>Allocation and holdings will appear after your first buy.</p>
-              </section>
-            ) : (
+          {transactions.length > 0 ? (
+            <div className="content-grid__secondary">
               <>
                 <HoldingsTable assets={snapshot.assets} />
                 <AllocationChart assets={snapshot.assets} />
               </>
-            )}
-          </div>
+            </div>
+          ) : null}
         </section>
-        </section>
+      </section>
     </main>
   );
 }

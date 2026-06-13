@@ -50,6 +50,9 @@ test("shows an empty-state message before any transactions are added", () => {
     screen.getByRole("heading", { name: /add your first crypto buy/i })
   ).toBeInTheDocument();
   expect(
+    screen.queryByText(/allocation and holdings will appear after your first buy/i)
+  ).not.toBeInTheDocument();
+  expect(
     screen.queryByRole("heading", { name: /^holdings$/i })
   ).not.toBeInTheDocument();
 });
