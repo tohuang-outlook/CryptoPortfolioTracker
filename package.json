@@ -2,6 +2,7 @@
   "name": "crypto-portfolio-tracker",
   "private": true,
   "version": "0.1.0",
+  "description": "A calm crypto portfolio tracker for everyday investors.",
   "main": "electron-dist/electron/main.js",
   "type": "module",
   "scripts": {
@@ -9,7 +10,7 @@
     "build": "tsc -b && vite build",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 5273 --strictPort\" \"wait-on http://127.0.0.1:5273 && node scripts/launch-electron.mjs\"",
-    "desktop:build": "npm run build && npm run electron:compile && electron-builder --mac dmg",
+    "desktop:build": "npm run build && npm run electron:compile && electron-builder --mac dmg --universal",
     "test": "vitest",
     "test:run": "vitest run"
   },
@@ -38,6 +39,9 @@
   "build": {
     "appId": "com.tonyhuang.cryptoportfoliotracker",
     "productName": "Crypto Portfolio Tracker",
+    "directories": {
+      "output": "dist-electron"
+    },
     "files": [
       "dist/**/*",
       "electron-dist/**/*",
