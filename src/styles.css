@@ -1,0 +1,85 @@
+:root {
+  font-family: "DM Sans", "Segoe UI", sans-serif;
+  color: #16313a;
+  background:
+    radial-gradient(circle at top, rgba(206, 232, 226, 0.9), transparent 40%),
+    linear-gradient(180deg, #f6fbfa 0%, #edf5f3 100%);
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.hero-card {
+  width: min(100%, 960px);
+  padding: clamp(32px, 6vw, 64px);
+  border: 1px solid rgba(22, 49, 58, 0.08);
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 24px 80px rgba(34, 74, 83, 0.12);
+  backdrop-filter: blur(14px);
+}
+
+.eyebrow {
+  margin: 0 0 16px;
+  color: #2a7a71;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  max-width: 12ch;
+  font-size: clamp(2.8rem, 8vw, 5.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.06em;
+}
+
+.hero-copy {
+  margin: 24px 0 0;
+  max-width: 36rem;
+  color: #365860;
+  font-size: clamp(1.05rem, 2vw, 1.3rem);
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 16px;
+  }
+
+  .hero-card {
+    border-radius: 24px;
+  }
+}
