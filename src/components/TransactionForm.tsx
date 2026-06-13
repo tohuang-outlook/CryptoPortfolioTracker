@@ -1,22 +1,19 @@
 import { useState } from "react";
 import { SUPPORTED_ASSETS } from "../constants/assets";
-
-interface TransactionFormValues {
-  assetSymbol: string;
-  amountInvested: string;
-  purchasePrice: string;
-  purchaseDate: string;
-  notes: string;
-}
+import type {
+  PurchaseField,
+  TransactionFormInput
+} from "../types/portfolio";
 
 type TransactionFormResult =
   | { success: true }
   | { success: false; error: string };
 
-const INITIAL_FORM: TransactionFormValues = {
+const INITIAL_FORM: TransactionFormInput = {
   assetSymbol: "BTC",
   amountInvested: "",
   purchasePrice: "",
+  purchaseShares: "",
   purchaseDate: "",
   notes: ""
 };
@@ -24,15 +21,76 @@ const INITIAL_FORM: TransactionFormValues = {
 export function TransactionForm({
   onSubmit
 }: {
-  onSubmit: (values: TransactionFormValues) => TransactionFormResult;
+  onSubmit: (values: TransactionFormInput) => TransactionFormResult;
 }) {
-  const [form, setForm] = useState<TransactionFormValues>(INITIAL_FORM);
+  const [form, setForm] = useState<TransactionFormInput>(INITIAL_FORM);
   const [error, setError] = useState("");
+  const [lastEditedField, setLastEditedField] =
+    useState<PurchaseField>("purchasePrice");
 
   const amountInvested = Number(form.amountInvested);
   const purchasePrice = Number(form.purchasePrice);
+  const purchaseShares = Number(form.purchaseShares);
   const quantity =
-    amountInvested > 0 && purchasePrice > 0 ? amountInvested / purchasePrice : 0;
+    amountInvested > 0 && purchasePrice > 0
+      ? amountInvested / purchasePrice
+      : amountInvested > 0 && purchaseShares > 0
+        ? purchaseShares
+        : 0;
+
+  function syncPurchaseFields(
+    nextForm: TransactionFormInput,
+    field: PurchaseField
+  ): TransactionFormInput {
+    const nextAmountInvested = Number(nextForm.amountInvested);
+    const nextPurchasePrice = Number(nextForm.purchasePrice);
+    const nextPurchaseShares = Number(nextForm.purchaseShares);
+
+    if (!(nextAmountInvested > 0)) {
+      return nextForm;
+    }
+
+    if (field === "purchasePrice" && nextPurchasePrice > 0) {
+      return {
+        ...nextForm,
+        purchaseShares: String(nextAmountInvested / nextPurchasePrice)
+      };
+    }
+
+    if (field === "purchaseShares" && nextPurchaseShares > 0) {
+      return {
+        ...nextForm,
+        purchasePrice: String(nextAmountInvested / nextPurchaseShares)
+      };
+    }
+
+    return nextForm;
+  }
+
+  function updateAmountInvested(value: string) {
+    setForm((currentForm) =>
+      syncPurchaseFields(
+        {
+          ...currentForm,
+          amountInvested: value
+        },
+        lastEditedField
+      )
+    );
+  }
+
+  function updatePurchaseField(field: PurchaseField, value: string) {
+    setLastEditedField(field);
+    setForm((currentForm) =>
+      syncPurchaseFields(
+        {
+          ...currentForm,
+          [field]: value
+        },
+        field
+      )
+    );
+  }
 
   return (
     <section aria-labelledby="transaction-form-heading">
@@ -49,6 +107,7 @@ export function TransactionForm({
 
           setError("");
           setForm(INITIAL_FORM);
+          setLastEditedField("purchasePrice");
         }}
       >
         <label>
@@ -79,12 +138,7 @@ export function TransactionForm({
             step="0.01"
             required
             value={form.amountInvested}
-            onChange={(event) =>
-              setForm((currentForm) => ({
-                ...currentForm,
-                amountInvested: event.target.value
-              }))
-            }
+            onChange={(event) => updateAmountInvested(event.target.value)}
           />
         </label>
 
@@ -95,13 +149,23 @@ export function TransactionForm({
             inputMode="decimal"
             min="0.00000001"
             step="0.00000001"
-            required
             value={form.purchasePrice}
             onChange={(event) =>
-              setForm((currentForm) => ({
-                ...currentForm,
-                purchasePrice: event.target.value
-              }))
+              updatePurchaseField("purchasePrice", event.target.value)
+            }
+          />
+        </label>
+
+        <label>
+          Purchase Shares
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0.00000001"
+            step="0.00000001"
+            value={form.purchaseShares}
+            onChange={(event) =>
+              updatePurchaseField("purchaseShares", event.target.value)
             }
           />
         </label>

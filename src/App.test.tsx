@@ -76,6 +76,17 @@ test("adds a BTC transaction and updates dashboard totals", async () => {
   expect(within(holdings).getByText("0.02000000")).toBeInTheDocument();
 });
 
+test("recalculates purchase price when amount invested and purchase shares are entered", async () => {
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await user.type(screen.getByLabelText(/amount invested/i), "1000");
+  await user.type(screen.getByLabelText(/purchase shares/i), "0.02");
+
+  expect(screen.getByLabelText(/purchase price/i)).toHaveValue(50000);
+});
+
 test("shows holdings, allocation, and history after a transaction is added", async () => {
   const user = userEvent.setup();
 
@@ -170,6 +181,7 @@ test("keeps both transactions when one event submits twice quickly", async () =>
         assetSymbol: string;
         amountInvested: string;
         purchasePrice: string;
+        purchaseShares: string;
         purchaseDate: string;
         notes: string;
       }) => { success: true } | { success: false; error: string };
@@ -181,6 +193,7 @@ test("keeps both transactions when one event submits twice quickly", async () =>
             assetSymbol: "BTC",
             amountInvested: "1000",
             purchasePrice: "50000",
+            purchaseShares: "",
             purchaseDate: "2026-06-01",
             notes: ""
           });
@@ -188,6 +201,7 @@ test("keeps both transactions when one event submits twice quickly", async () =>
             assetSymbol: "ETH",
             amountInvested: "4000",
             purchasePrice: "2000",
+            purchaseShares: "",
             purchaseDate: "2026-06-02",
             notes: ""
           });
@@ -244,6 +258,7 @@ test("edits an existing transaction and updates portfolio summary", async () => 
         assetSymbol: string;
         amountInvested: string;
         purchasePrice: string;
+        purchaseShares: string;
         purchaseDate: string;
         notes: string;
       }) => { success: true } | { success: false; error: string };
@@ -256,6 +271,7 @@ test("edits an existing transaction and updates portfolio summary", async () => 
             assetSymbol: "BTC",
             amountInvested: "1500",
             purchasePrice: "50000",
+            purchaseShares: "",
             purchaseDate: "2026-06-01",
             notes: "starter"
           })
