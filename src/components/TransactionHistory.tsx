@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { SUPPORTED_ASSETS } from "../constants/assets";
-import type { Transaction, TransactionFormInput } from "../types/portfolio";
+import type {
+  PurchaseField,
+  Transaction,
+  TransactionFormInput
+} from "../types/portfolio";
 
 type TransactionMutationResult =
   | { success: true }
@@ -22,6 +26,7 @@ export function TransactionHistory({
     assetSymbol: string;
     amountInvested: string;
     purchasePrice: string;
+    purchaseShares: string;
     purchaseDate: string;
     notes: string;
   }) => TransactionMutationResult;
@@ -137,14 +142,76 @@ function EditableTransactionRow({
     assetSymbol: transaction.assetSymbol,
     amountInvested: String(transaction.amountInvested),
     purchasePrice: String(transaction.purchasePrice),
+    purchaseShares: String(transaction.quantity),
     purchaseDate: transaction.purchaseDate,
     notes: transaction.notes
   });
+  const [lastEditedField, setLastEditedField] =
+    useState<PurchaseField>("purchasePrice");
 
   const amountInvested = Number(form.amountInvested);
   const purchasePrice = Number(form.purchasePrice);
+  const purchaseShares = Number(form.purchaseShares);
   const quantity =
-    amountInvested > 0 && purchasePrice > 0 ? amountInvested / purchasePrice : 0;
+    amountInvested > 0 && purchasePrice > 0
+      ? amountInvested / purchasePrice
+      : amountInvested > 0 && purchaseShares > 0
+        ? purchaseShares
+        : 0;
+
+  function syncPurchaseFields(
+    nextForm: TransactionFormInput,
+    field: PurchaseField
+  ): TransactionFormInput {
+    const nextAmountInvested = Number(nextForm.amountInvested);
+    const nextPurchasePrice = Number(nextForm.purchasePrice);
+    const nextPurchaseShares = Number(nextForm.purchaseShares);
+
+    if (!(nextAmountInvested > 0)) {
+      return nextForm;
+    }
+
+    if (field === "purchasePrice" && nextPurchasePrice > 0) {
+      return {
+        ...nextForm,
+        purchaseShares: String(nextAmountInvested / nextPurchasePrice)
+      };
+    }
+
+    if (field === "purchaseShares" && nextPurchaseShares > 0) {
+      return {
+        ...nextForm,
+        purchasePrice: String(nextAmountInvested / nextPurchaseShares)
+      };
+    }
+
+    return nextForm;
+  }
+
+  function updateAmountInvested(value: string) {
+    setForm((currentForm) =>
+      syncPurchaseFields(
+        {
+          ...currentForm,
+          amountInvested: value
+        },
+        lastEditedField
+      )
+    );
+  }
+
+  function updatePurchaseField(field: PurchaseField, value: string) {
+    setLastEditedField(field);
+    setForm((currentForm) =>
+      syncPurchaseFields(
+        {
+          ...currentForm,
+          [field]: value
+        },
+        field
+      )
+    );
+  }
 
   return (
     <article
@@ -183,36 +250,41 @@ function EditableTransactionRow({
             <input
               type="number"
               inputMode="decimal"
-              min="0.01"
-              step="0.01"
-              required
-              value={form.amountInvested}
-              onChange={(event) =>
-                setForm((currentForm) => ({
-                  ...currentForm,
-                  amountInvested: event.target.value
-                }))
-              }
-            />
-          </label>
+            min="0.01"
+            step="0.01"
+            required
+            value={form.amountInvested}
+            onChange={(event) => updateAmountInvested(event.target.value)}
+          />
+        </label>
 
           <label>
             Purchase Price
             <input
-              type="number"
-              inputMode="decimal"
-              min="0.00000001"
-              step="0.00000001"
-              required
-              value={form.purchasePrice}
-              onChange={(event) =>
-                setForm((currentForm) => ({
-                  ...currentForm,
-                  purchasePrice: event.target.value
-                }))
-              }
-            />
-          </label>
+            type="number"
+            inputMode="decimal"
+            min="0.00000001"
+            step="0.00000001"
+            value={form.purchasePrice}
+            onChange={(event) =>
+              updatePurchaseField("purchasePrice", event.target.value)
+            }
+          />
+        </label>
+
+        <label>
+          Purchase Shares
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0.00000001"
+            step="0.00000001"
+            value={form.purchaseShares}
+            onChange={(event) =>
+              updatePurchaseField("purchaseShares", event.target.value)
+            }
+          />
+        </label>
 
           <label>
             Purchase Date

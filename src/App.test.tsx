@@ -516,6 +516,25 @@ test("only one transaction can be in edit mode at a time", async () => {
   ).toBeInTheDocument();
 });
 
+test("recalculates purchase price inside inline edit when purchase shares is changed", async () => {
+  seedSingleBtcTransaction();
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  const history = screen.getByRole("region", { name: /transaction history/i });
+  await user.click(
+    within(history).getByRole("button", { name: /edit bitcoin/i })
+  );
+  await user.clear(within(history).getByLabelText(/purchase shares/i));
+  await user.type(
+    within(history).getByLabelText(/purchase shares/i),
+    "0.01"
+  );
+
+  expect(within(history).getByLabelText(/purchase price/i)).toHaveValue(100000);
+});
+
 function seedSingleBtcTransaction() {
   window.localStorage.setItem(
     "crypto-portfolio-transactions",
