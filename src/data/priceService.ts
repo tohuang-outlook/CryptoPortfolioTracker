@@ -22,11 +22,19 @@ export async function fetchSupportedPrices(): Promise<PriceMap> {
   const data = (await response.json()) as ProviderResponse;
 
   return {
-    BTC: data.bitcoin?.usd ?? 0,
-    ETH: data.ethereum?.usd ?? 0,
-    SOL: data.solana?.usd ?? 0,
-    XRP: data.ripple?.usd ?? 0,
-    ADA: data.cardano?.usd ?? 0,
-    DOGE: data.dogecoin?.usd ?? 0
+    BTC: readUsdPrice(data.bitcoin?.usd),
+    ETH: readUsdPrice(data.ethereum?.usd),
+    SOL: readUsdPrice(data.solana?.usd),
+    XRP: readUsdPrice(data.ripple?.usd),
+    ADA: readUsdPrice(data.cardano?.usd),
+    DOGE: readUsdPrice(data.dogecoin?.usd)
   };
+}
+
+function readUsdPrice(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error("Malformed price payload");
+  }
+
+  return value;
 }

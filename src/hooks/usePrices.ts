@@ -20,14 +20,17 @@ export function usePrices() {
 
   useEffect(() => {
     let active = true;
+    let latestRequestId = 0;
 
     async function load() {
+      const requestId = latestRequestId + 1;
+      latestRequestId = requestId;
       setStatus("loading");
 
       try {
         const nextPrices = await fetchSupportedPrices();
 
-        if (!active) {
+        if (!active || requestId !== latestRequestId) {
           return;
         }
 
@@ -35,7 +38,7 @@ export function usePrices() {
         setStatus("ready");
         setLastUpdated(new Date().toISOString());
       } catch {
-        if (!active) {
+        if (!active || requestId !== latestRequestId) {
           return;
         }
 

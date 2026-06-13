@@ -31,4 +31,58 @@ describe("fetchSupportedPrices", () => {
     expect(prices.ADA).toBe(0.45);
     expect(prices.DOGE).toBe(0.2);
   });
+
+  it("throws when the provider responds with a non-ok status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false
+      })
+    );
+
+    await expect(fetchSupportedPrices()).rejects.toThrow(
+      "Unable to fetch prices"
+    );
+  });
+
+  it("throws when the provider payload is missing a required usd field", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          bitcoin: { usd: 65000 },
+          ethereum: { usd: 2500 },
+          solana: { usd: 150 },
+          ripple: { usd: 1.1 },
+          cardano: { usd: 0.45 }
+        })
+      })
+    );
+
+    await expect(fetchSupportedPrices()).rejects.toThrow(
+      "Malformed price payload"
+    );
+  });
+
+  it("throws when a provider usd field is not a finite number", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          bitcoin: { usd: 65000 },
+          ethereum: { usd: 2500 },
+          solana: { usd: 150 },
+          ripple: { usd: 1.1 },
+          cardano: { usd: "0.45" },
+          dogecoin: { usd: 0.2 }
+        })
+      })
+    );
+
+    await expect(fetchSupportedPrices()).rejects.toThrow(
+      "Malformed price payload"
+    );
+  });
 });
