@@ -45,6 +45,7 @@
     },
     "files": [
       "dist/**/*",
+      "electron/preload.cjs",
       "electron-dist/**/*",
       "package.json"
     ],

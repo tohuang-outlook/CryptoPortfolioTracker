@@ -7,8 +7,8 @@ const __dirname = path.dirname(__filename);
 
 const isDev = !app.isPackaged;
 const rendererUrl = process.env.VITE_DEV_SERVER_URL;
-const preloadPath = path.join(__dirname, "preload.js");
-const rendererHtmlPath = path.join(__dirname, "../dist/index.html");
+const preloadPath = path.join(__dirname, "../../electron/preload.cjs");
+const rendererHtmlPath = path.join(__dirname, "../../dist/index.html");
 
 function createMainWindow() {
   const window = new BrowserWindow({
