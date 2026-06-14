@@ -40,7 +40,7 @@
   "build": {
     "appId": "com.tonyhuang.cryptoportfoliotracker",
     "productName": "Crypto Portfolio Tracker",
-    "afterPack": "scripts/after-pack.mjs",
+    "afterPack": "scripts/after-pack.cjs",
     "directories": {
       "output": "dist-electron"
     },
