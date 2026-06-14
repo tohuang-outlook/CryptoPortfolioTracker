@@ -9,9 +9,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "electron:compile": "tsc -p tsconfig.electron.json",
-    "icon:mac": "mkdir -p .swift-module-cache && SWIFT_MODULECACHE_PATH=$PWD/.swift-module-cache CLANG_MODULE_CACHE_PATH=$PWD/.swift-module-cache swift scripts/render-mac-icon.swift build-assets/app-icon.png && ./scripts/generate-mac-icon.sh",
+    "icon:mac": "node scripts/build-mac-icon.mjs",
     "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 5273 --strictPort\" \"wait-on http://127.0.0.1:5273 && node scripts/launch-electron.mjs\"",
-    "desktop:build": "npm run icon:mac && node scripts/prepare-build-icon.mjs && npm run build && npm run electron:compile && electron-builder --mac dmg --universal",
+    "desktop:build": "npm run icon:mac && npm run build && npm run electron:compile && electron-builder --mac dmg --universal",
     "test": "vitest",
     "test:run": "vitest run"
   },
@@ -40,7 +40,6 @@
   "build": {
     "appId": "com.tonyhuang.cryptoportfoliotracker",
     "productName": "Crypto Portfolio Tracker",
-    "afterPack": "scripts/after-pack.cjs",
     "directories": {
       "output": "dist-electron"
     },

@@ -7,9 +7,8 @@ ICONSET_DIR="$ROOT_DIR/build-assets/mac/icon.iconset"
 OUTPUT_ICON="$ROOT_DIR/build-assets/mac/icon.icns"
 TEMP_BASE="$(mktemp /tmp/crypto-portfolio-icon.XXXXXX)"
 NORMALIZED_ICON="${TEMP_BASE}.png"
-TIFF_ICON="${TEMP_BASE}.tiff"
 TEMP_ICON="${TEMP_BASE}.icns"
-rm -f "$NORMALIZED_ICON" "$TIFF_ICON" "$TEMP_ICON"
+rm -f "$NORMALIZED_ICON" "$TEMP_ICON"
 
 rm -rf "$ICONSET_DIR"
 mkdir -p "$ICONSET_DIR"
@@ -29,9 +28,8 @@ sips -z 512 512 "$NORMALIZED_ICON" --out "$ICONSET_DIR/icon_256x256@2x.png"
 sips -z 512 512 "$NORMALIZED_ICON" --out "$ICONSET_DIR/icon_512x512.png"
 sips -z 1024 1024 "$NORMALIZED_ICON" --out "$ICONSET_DIR/icon_512x512@2x.png"
 
-sips -s format tiff "$NORMALIZED_ICON" --out "$TIFF_ICON"
-tiff2icns "$TIFF_ICON" "$TEMP_ICON"
+sips -s format icns "$NORMALIZED_ICON" --out "$TEMP_ICON"
 [ -s "$TEMP_ICON" ]
 cp "$TEMP_ICON" "$OUTPUT_ICON"
 [ -s "$OUTPUT_ICON" ]
-rm -f "$TEMP_BASE" "$NORMALIZED_ICON" "$TIFF_ICON" "$TEMP_ICON"
+rm -f "$TEMP_BASE" "$NORMALIZED_ICON" "$TEMP_ICON"
