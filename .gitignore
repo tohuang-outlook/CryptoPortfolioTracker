@@ -4,6 +4,7 @@ electron-dist/
 .vite/
 .swift-module-cache/
 build-assets/mac/icon.tiff
+build-assets/mac/icon-source-1024.png
 build/
 node_modules/
 tsconfig.tsbuildinfo
