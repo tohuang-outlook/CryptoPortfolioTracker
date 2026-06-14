@@ -9,6 +9,7 @@ TIFF_ICON="$ROOT_DIR/build-assets/mac/icon.tiff"
 
 rm -rf "$ICONSET_DIR"
 mkdir -p "$ICONSET_DIR"
+rm -f "$OUTPUT_ICON" "$TIFF_ICON"
 
 sips -z 16 16 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_16x16.png"
 sips -z 32 32 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_16x16@2x.png"
@@ -23,4 +24,5 @@ sips -z 1024 1024 "$SOURCE_ICON" --out "$ICONSET_DIR/icon_512x512@2x.png"
 
 sips -s format tiff "$SOURCE_ICON" --out "$TIFF_ICON"
 tiff2icns "$TIFF_ICON" "$OUTPUT_ICON"
+[ -s "$OUTPUT_ICON" ]
 rm -f "$TIFF_ICON"
