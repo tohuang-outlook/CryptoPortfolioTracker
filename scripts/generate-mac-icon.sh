@@ -3,17 +3,17 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE_ICON="$ROOT_DIR/build-assets/app-icon.png"
-NORMALIZED_ICON="$ROOT_DIR/build-assets/mac/icon-source-1024.png"
 ICONSET_DIR="$ROOT_DIR/build-assets/mac/icon.iconset"
 OUTPUT_ICON="$ROOT_DIR/build-assets/mac/icon.icns"
-TIFF_ICON="$ROOT_DIR/build-assets/mac/icon.tiff"
-TEMP_ICON_BASE="$(mktemp /tmp/crypto-portfolio-icon.XXXXXX)"
-TEMP_ICON="${TEMP_ICON_BASE}.icns"
-rm -f "$TEMP_ICON"
+TEMP_BASE="$(mktemp /tmp/crypto-portfolio-icon.XXXXXX)"
+NORMALIZED_ICON="${TEMP_BASE}.png"
+TIFF_ICON="${TEMP_BASE}.tiff"
+TEMP_ICON="${TEMP_BASE}.icns"
+rm -f "$NORMALIZED_ICON" "$TIFF_ICON" "$TEMP_ICON"
 
 rm -rf "$ICONSET_DIR"
 mkdir -p "$ICONSET_DIR"
-rm -f "$OUTPUT_ICON" "$TIFF_ICON" "$NORMALIZED_ICON"
+rm -f "$OUTPUT_ICON"
 
 sips -z 1024 1024 "$SOURCE_ICON" --out "$NORMALIZED_ICON"
 [ -s "$NORMALIZED_ICON" ]
@@ -34,5 +34,4 @@ tiff2icns "$TIFF_ICON" "$TEMP_ICON"
 [ -s "$TEMP_ICON" ]
 cp "$TEMP_ICON" "$OUTPUT_ICON"
 [ -s "$OUTPUT_ICON" ]
-rm -f "$TEMP_ICON_BASE" "$TEMP_ICON" "$NORMALIZED_ICON"
-rm -f "$TIFF_ICON"
+rm -f "$TEMP_BASE" "$NORMALIZED_ICON" "$TIFF_ICON" "$TEMP_ICON"
