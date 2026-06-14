@@ -72,7 +72,7 @@ test("adds a BTC transaction and updates dashboard totals", async () => {
   const holdings = screen.getByRole("region", { name: /^holdings$/i });
 
   expect(within(summary).getByText("$1,000.00")).toBeInTheDocument();
-  expect(within(holdings).getByText("Bitcoin")).toBeInTheDocument();
+  expect(within(holdings).getByText("Bitcoin · 100.0%")).toBeInTheDocument();
   expect(within(holdings).getByText("0.02000000")).toBeInTheDocument();
 });
 
@@ -112,11 +112,15 @@ test("shows holdings, allocation, and history after a transaction is added", asy
   await user.type(screen.getByLabelText(/purchase date/i), "2026-06-02");
   await user.click(screen.getByRole("button", { name: /save transaction/i }));
 
+  const holdings = screen.getByRole("region", { name: /^holdings$/i });
+
   expect(screen.getByRole("heading", { name: /^holdings$/i })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /^allocation$/i })).toBeInTheDocument();
   expect(
     screen.getByRole("heading", { name: /transaction history/i })
   ).toBeInTheDocument();
+  expect(within(holdings).getByText("ETH")).toBeInTheDocument();
+  expect(within(holdings).getByText("Ethereum · 100.0%")).toBeInTheDocument();
 });
 
 test("hydrates totals and holdings from persisted transactions", () => {
@@ -145,7 +149,7 @@ test("hydrates totals and holdings from persisted transactions", () => {
   const holdings = screen.getByRole("region", { name: /^holdings$/i });
 
   expect(within(summary).getByText("$1,000.00")).toBeInTheDocument();
-  expect(within(holdings).getByText("Bitcoin")).toBeInTheDocument();
+  expect(within(holdings).getByText("Bitcoin · 100.0%")).toBeInTheDocument();
   expect(within(holdings).getByText("0.02000000")).toBeInTheDocument();
 });
 

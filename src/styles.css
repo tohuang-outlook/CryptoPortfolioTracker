@@ -226,6 +226,19 @@ h1 {
 }
 
 .asset-cell {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.asset-cell__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.asset-cell__content {
   display: grid;
   gap: 4px;
 }

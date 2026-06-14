@@ -1,5 +1,14 @@
 import type { AssetSummary } from "../types/portfolio";
 
+const HOLDING_DOT_COLORS = [
+  "#1f6f78",
+  "#4f9d8c",
+  "#8fb996",
+  "#d2b48c",
+  "#d9845f",
+  "#9b6a6c"
+] as const;
+
 export function HoldingsTable({ assets }: { assets: AssetSummary[] }) {
   return (
     <section className="panel" aria-labelledby="holdings-heading">
@@ -22,12 +31,24 @@ export function HoldingsTable({ assets }: { assets: AssetSummary[] }) {
             </tr>
           </thead>
           <tbody>
-            {assets.map((asset) => (
+            {assets.map((asset, index) => (
               <tr key={asset.assetSymbol}>
                 <th scope="row">
                   <div className="asset-cell">
-                    <span className="asset-cell__symbol">{asset.assetSymbol}</span>
-                    <span className="asset-cell__name">{asset.assetName}</span>
+                    <span
+                      className="asset-cell__dot"
+                      style={{
+                        backgroundColor:
+                          HOLDING_DOT_COLORS[index % HOLDING_DOT_COLORS.length]
+                      }}
+                      aria-hidden="true"
+                    />
+                    <div className="asset-cell__content">
+                      <span className="asset-cell__symbol">{asset.assetSymbol}</span>
+                      <span className="asset-cell__name">
+                        {asset.assetName} · {formatPercent(asset.allocationPercent)}
+                      </span>
+                    </div>
                   </div>
                 </th>
                 <td>{asset.totalQuantity.toFixed(8)}</td>
@@ -59,4 +80,8 @@ function formatCurrency(value: number) {
 function formatSignedCurrency(value: number) {
   const formattedValue = formatCurrency(Math.abs(value));
   return value >= 0 ? `+${formattedValue}` : `-${formattedValue}`;
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
 }
