@@ -43,6 +43,13 @@ test("renders the portfolio tracker heading", () => {
   ).toBeInTheDocument();
 });
 
+test("creates and displays a default profile on first boot", () => {
+  render(<App />);
+
+  expect(screen.getByRole("button", { name: /my portfolio/i })).toBeInTheDocument();
+  expect(screen.getByText(/active portfolio/i)).toBeInTheDocument();
+});
+
 test("shows an empty-state message before any transactions are added", () => {
   render(<App />);
 
@@ -74,6 +81,44 @@ test("adds a BTC transaction and updates dashboard totals", async () => {
   expect(within(summary).getByText("$1,000.00")).toBeInTheDocument();
   expect(within(holdings).getByText("Bitcoin · 100.0%")).toBeInTheDocument();
   expect(within(holdings).getByText("0.02000000")).toBeInTheDocument();
+});
+
+test("creates a new profile and switches to its empty portfolio", async () => {
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /my portfolio/i }));
+  await user.click(screen.getByRole("button", { name: /create new profile/i }));
+  await user.type(screen.getByLabelText(/profile name/i), "Tony");
+  await user.click(screen.getByRole("button", { name: /teal avatar/i }));
+  await user.click(screen.getByRole("button", { name: /^create profile$/i }));
+
+  expect(screen.getByRole("button", { name: /tony/i })).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: /add your first crypto buy/i })
+  ).toBeInTheDocument();
+});
+
+test("switches between profiles and keeps portfolio data isolated", async () => {
+  const user = userEvent.setup();
+
+  seedProfileData();
+  render(<App />);
+
+  const summary = screen.getByLabelText(/portfolio summary/i);
+  const holdings = screen.getByRole("region", { name: /^holdings$/i });
+
+  expect(within(summary).getByText("$1,000.00")).toBeInTheDocument();
+  expect(within(holdings).getByText("Bitcoin · 100.0%")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /my portfolio/i }));
+  await user.click(screen.getByRole("button", { name: /trading desk/i }));
+
+  expect(screen.getByRole("button", { name: /trading desk/i })).toBeInTheDocument();
+  expect(within(summary).getByText("$4,000.00")).toBeInTheDocument();
+  expect(within(holdings).getByText("Ethereum · 100.0%")).toBeInTheDocument();
+  expect(within(holdings).queryByText("Bitcoin · 100.0%")).not.toBeInTheDocument();
 });
 
 test("recalculates purchase price when amount invested and purchase shares are entered", async () => {
@@ -605,6 +650,65 @@ function seedTwoTransactions() {
         updatedAt: "2026-06-02T00:00:00.000Z"
       }
     ])
+  );
+}
+
+function seedProfileData() {
+  window.localStorage.setItem(
+    "crypto-portfolio-profiles",
+    JSON.stringify([
+      {
+        id: "profile-1",
+        name: "My Portfolio",
+        avatarColor: "#1f6f78",
+        createdAt: "2026-06-13T00:00:00.000Z"
+      },
+      {
+        id: "profile-2",
+        name: "Trading Desk",
+        avatarColor: "#4f9d8c",
+        createdAt: "2026-06-13T00:05:00.000Z"
+      }
+    ])
+  );
+  window.localStorage.setItem(
+    "crypto-portfolio-active-profile-id",
+    "profile-1"
+  );
+  window.localStorage.setItem(
+    "crypto-portfolio-transactions-by-profile",
+    JSON.stringify({
+      "profile-1": [
+        {
+          id: "btc-1",
+          assetSymbol: "BTC",
+          assetName: "Bitcoin",
+          type: "buy",
+          amountInvested: 1000,
+          purchasePrice: 50000,
+          quantity: 0.02,
+          purchaseDate: "2026-06-01",
+          notes: "",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z"
+        }
+      ],
+      "profile-2": [
+        {
+          id: "eth-1",
+          assetSymbol: "ETH",
+          assetName: "Ethereum",
+          type: "buy",
+          amountInvested: 4000,
+          purchasePrice: 2000,
+          quantity: 2,
+          purchaseDate: "2026-06-02",
+          notes: "",
+          createdAt: "2026-06-02T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:00:00.000Z"
+        }
+      ]
+    })
   );
 }
 

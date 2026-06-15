@@ -3,21 +3,31 @@ import { AllocationChart } from "./components/AllocationChart";
 import { EmptyState } from "./components/EmptyState";
 import { HoldingsTable } from "./components/HoldingsTable";
 import { PriceStatus } from "./components/PriceStatus";
+import { ProfileSwitcher } from "./components/ProfileSwitcher";
 import { SummaryCards } from "./components/SummaryCards";
 import { TransactionForm } from "./components/TransactionForm";
 import { TransactionHistory } from "./components/TransactionHistory";
+import { useProfiles } from "./hooks/useProfiles";
 import { usePortfolio } from "./hooks/usePortfolio";
 import { usePrices } from "./hooks/usePrices";
 
 export default function App() {
   const { prices, status, lastUpdated } = usePrices();
   const {
+    profiles,
+    activeProfile,
+    activeTransactions,
+    createProfile,
+    switchProfile,
+    saveActiveTransactions
+  } = useProfiles();
+  const {
     transactions,
     snapshot,
     addTransaction,
     updateTransaction,
     deleteTransaction
-  } = usePortfolio(prices);
+  } = usePortfolio(prices, activeTransactions, saveActiveTransactions);
 
   return (
     <main className="app-shell">
@@ -33,6 +43,12 @@ export default function App() {
           </div>
           <div className="hero-status">
             <PriceStatus status={status} lastUpdated={lastUpdated} />
+            <ProfileSwitcher
+              profiles={profiles}
+              activeProfile={activeProfile}
+              onCreateProfile={createProfile}
+              onSwitchProfile={switchProfile}
+            />
           </div>
         </header>
 
