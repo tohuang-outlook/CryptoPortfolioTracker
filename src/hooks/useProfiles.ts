@@ -20,6 +20,11 @@ interface CreateProfileInput {
   avatarColor: string;
 }
 
+interface RenameProfileInput {
+  id: string;
+  name: string;
+}
+
 interface ProfileState {
   profiles: Profile[];
   activeProfileId: string | null;
@@ -105,6 +110,96 @@ export function useProfiles() {
     return { success: true };
   }
 
+  function renameProfile(input: RenameProfileInput): MutationResult {
+    const trimmedName = input.name.trim();
+
+    if (trimmedName.length === 0) {
+      return {
+        success: false,
+        error: "Please enter a profile name."
+      };
+    }
+
+    if (!state.profiles.some((profile) => profile.id === input.id)) {
+      return {
+        success: false,
+        error: "Unable to find that profile."
+      };
+    }
+
+    const nextProfiles = state.profiles.map((profile) =>
+      profile.id === input.id ? { ...profile, name: trimmedName } : profile
+    );
+
+    const saveResult = profileRepository.saveProfiles(nextProfiles);
+    if (!saveResult.success) {
+      return saveResult;
+    }
+
+    setState((currentState) => ({
+      ...currentState,
+      profiles: nextProfiles
+    }));
+
+    return { success: true };
+  }
+
+  function deleteProfile(profileId: string): MutationResult {
+    const targetProfile = state.profiles.find((profile) => profile.id === profileId);
+    if (!targetProfile) {
+      return {
+        success: false,
+        error: "Unable to find that profile."
+      };
+    }
+
+    if (state.profiles.length === 1) {
+      return {
+        success: false,
+        error: "You need at least one profile."
+      };
+    }
+
+    const nextProfiles = state.profiles.filter((profile) => profile.id !== profileId);
+    const nextTransactionsByProfileId = {
+      ...state.transactionsByProfileId
+    };
+    delete nextTransactionsByProfileId[profileId];
+
+    const nextActiveProfileId =
+      state.activeProfileId === profileId
+        ? nextProfiles[0]?.id ?? null
+        : state.activeProfileId;
+
+    const saveProfilesResult = profileRepository.saveProfiles(nextProfiles);
+    if (!saveProfilesResult.success) {
+      return saveProfilesResult;
+    }
+
+    const saveTransactionsResult = transactionRepository.saveTransactionsByProfileId(
+      nextTransactionsByProfileId
+    );
+    if (!saveTransactionsResult.success) {
+      return saveTransactionsResult;
+    }
+
+    if (nextActiveProfileId) {
+      const saveActiveProfileResult =
+        profileRepository.saveActiveProfileId(nextActiveProfileId);
+      if (!saveActiveProfileResult.success) {
+        return saveActiveProfileResult;
+      }
+    }
+
+    setState({
+      profiles: nextProfiles,
+      activeProfileId: nextActiveProfileId,
+      transactionsByProfileId: nextTransactionsByProfileId
+    });
+
+    return { success: true };
+  }
+
   function saveActiveTransactions(updatedTransactions: Transaction[]): MutationResult {
     if (!state.activeProfileId) {
       return {
@@ -139,6 +234,8 @@ export function useProfiles() {
     activeProfile,
     activeTransactions,
     createProfile,
+    renameProfile,
+    deleteProfile,
     switchProfile,
     saveActiveTransactions
   };

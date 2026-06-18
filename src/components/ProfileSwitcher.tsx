@@ -13,7 +13,9 @@ export function ProfileSwitcher({
   profiles,
   activeProfile,
   onSwitchProfile,
-  onCreateProfile
+  onCreateProfile,
+  onRenameProfile,
+  onDeleteProfile
 }: {
   profiles: Profile[];
   activeProfile: Profile | null;
@@ -22,11 +24,18 @@ export function ProfileSwitcher({
     name: string;
     avatarColor: string;
   }) => MutationResult;
+  onRenameProfile: (input: { id: string; name: string }) => MutationResult;
+  onDeleteProfile: (profileId: string) => MutationResult;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
   const [selectedColor, setSelectedColor] = useState<string>(DEFAULT_PROFILE_COLOR);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [deleteConfirmProfileId, setDeleteConfirmProfileId] = useState<string | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
 
   if (!activeProfile) {
@@ -43,6 +52,8 @@ export function ProfileSwitcher({
     setError(null);
     setIsOpen(false);
     setIsCreating(false);
+    setEditingProfileId(null);
+    setDeleteConfirmProfileId(null);
   }
 
   function handleCreate() {
@@ -63,6 +74,65 @@ export function ProfileSwitcher({
     setIsOpen(false);
   }
 
+  function startRename(profile: Profile) {
+    setIsCreating(false);
+    setEditingProfileId(profile.id);
+    setEditingName(profile.name);
+    setDeleteConfirmProfileId(null);
+    setError(null);
+  }
+
+  function handleRenameSave(profileId: string) {
+    const result = onRenameProfile({
+      id: profileId,
+      name: editingName
+    });
+
+    if (!result.success) {
+      setError(result.error);
+      return;
+    }
+
+    setError(null);
+    setEditingProfileId(null);
+    setEditingName("");
+    setDeleteConfirmProfileId(null);
+    setIsOpen(false);
+  }
+
+  function handleRenameCancel() {
+    setEditingProfileId(null);
+    setEditingName("");
+    setError(null);
+  }
+
+  function startDelete(profileId: string) {
+    setIsCreating(false);
+    setEditingProfileId(null);
+    setEditingName("");
+    setDeleteConfirmProfileId(profileId);
+    setError(null);
+  }
+
+  function handleDeleteConfirm(profileId: string) {
+    const result = onDeleteProfile(profileId);
+    if (!result.success) {
+      setError(result.error);
+      return;
+    }
+
+    setError(null);
+    setDeleteConfirmProfileId(null);
+    setEditingProfileId(null);
+    setEditingName("");
+    setIsOpen(false);
+  }
+
+  function handleDeleteCancel() {
+    setDeleteConfirmProfileId(null);
+    setError(null);
+  }
+
   return (
     <div className="profile-switcher">
       <button
@@ -71,6 +141,9 @@ export function ProfileSwitcher({
         onClick={() => {
           setIsOpen((open) => !open);
           setError(null);
+          setEditingProfileId(null);
+          setDeleteConfirmProfileId(null);
+          setIsCreating(false);
         }}
         aria-expanded={isOpen}
       >
@@ -88,25 +161,109 @@ export function ProfileSwitcher({
       {isOpen ? (
         <div className="profile-switcher__menu">
           <div className="profile-switcher__list">
-            {profiles.map((profile) => (
-              <button
-                key={profile.id}
-                type="button"
-                className={
-                  profile.id === activeProfile.id
-                    ? "profile-switcher__option profile-switcher__option--active"
-                    : "profile-switcher__option"
-                }
-                onClick={() => handleSwitch(profile.id)}
-              >
-                <span
-                  className="profile-switcher__avatar"
-                  style={{ backgroundColor: profile.avatarColor }}
-                  aria-hidden="true"
-                />
-                <span>{profile.name}</span>
-              </button>
-            ))}
+            {profiles.map((profile) => {
+              const optionClassName =
+                profile.id === activeProfile.id
+                  ? "profile-switcher__option profile-switcher__option--active"
+                  : "profile-switcher__option";
+
+              if (editingProfileId === profile.id) {
+                return (
+                  <div key={profile.id} className={optionClassName}>
+                    <div className="profile-switcher__row-editor">
+                      <label className="profile-switcher__label">
+                        <span className="sr-only">Rename profile name</span>
+                        <input
+                          aria-label="Rename profile name"
+                          value={editingName}
+                          onChange={(event) => setEditingName(event.target.value)}
+                        />
+                      </label>
+                      <div className="profile-switcher__row-actions">
+                        <button
+                          type="button"
+                          onClick={() => handleRenameSave(profile.id)}
+                        >
+                          Save Profile Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={handleRenameCancel}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (deleteConfirmProfileId === profile.id) {
+                return (
+                  <div key={profile.id} className={optionClassName}>
+                    <div className="profile-switcher__row-delete">
+                      <p>Delete this profile and all of its transactions?</p>
+                      <div className="profile-switcher__row-actions">
+                        <button
+                          type="button"
+                          className="button-danger"
+                          onClick={() => handleDeleteConfirm(profile.id)}
+                        >
+                          Confirm Delete {profile.name}
+                        </button>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={handleDeleteCancel}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={profile.id} className={optionClassName}>
+                  <div className="profile-switcher__row-meta">
+                    <button
+                      type="button"
+                      className="profile-switcher__row-link"
+                      onClick={() => handleSwitch(profile.id)}
+                    >
+                      <span
+                        className="profile-switcher__avatar"
+                        style={{ backgroundColor: profile.avatarColor }}
+                        aria-hidden="true"
+                      />
+                      <span>{profile.name}</span>
+                    </button>
+                    <div className="profile-switcher__row-actions">
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        aria-label={`Rename ${profile.name}`}
+                        onClick={() => startRename(profile)}
+                      >
+                        Rename
+                      </button>
+                      {profiles.length > 1 ? (
+                        <button
+                          type="button"
+                          className="button-secondary button-danger-soft"
+                          aria-label={`Delete ${profile.name}`}
+                          onClick={() => startDelete(profile.id)}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {isCreating ? (
@@ -156,16 +313,21 @@ export function ProfileSwitcher({
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              className="profile-switcher__create-trigger"
-              onClick={() => {
-                setIsCreating(true);
-                setError(null);
-              }}
-            >
-              Create New Profile
-            </button>
+            <>
+              {error ? <p className="profile-switcher__error">{error}</p> : null}
+              <button
+                type="button"
+                className="profile-switcher__create-trigger"
+                onClick={() => {
+                  setIsCreating(true);
+                  setEditingProfileId(null);
+                  setDeleteConfirmProfileId(null);
+                  setError(null);
+                }}
+              >
+                Create New Profile
+              </button>
+            </>
           )}
         </div>
       ) : null}

@@ -113,12 +113,92 @@ test("switches between profiles and keeps portfolio data isolated", async () => 
   expect(within(holdings).getByText("Bitcoin · 100.0%")).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /my portfolio/i }));
-  await user.click(screen.getByRole("button", { name: /trading desk/i }));
+  await user.click(screen.getByRole("button", { name: /^trading desk$/i }));
 
   expect(screen.getByRole("button", { name: /trading desk/i })).toBeInTheDocument();
   expect(within(summary).getByText("$4,000.00")).toBeInTheDocument();
   expect(within(holdings).getByText("Ethereum · 100.0%")).toBeInTheDocument();
   expect(within(holdings).queryByText("Bitcoin · 100.0%")).not.toBeInTheDocument();
+});
+
+test("renames the active profile from the profile switcher", async () => {
+  const user = userEvent.setup();
+
+  seedProfileData();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /my portfolio/i }));
+  await user.click(screen.getByRole("button", { name: /rename my portfolio/i }));
+  await user.clear(screen.getByLabelText(/rename profile name/i));
+  await user.type(
+    screen.getByLabelText(/rename profile name/i),
+    "Tony Long Term"
+  );
+  await user.click(screen.getByRole("button", { name: /save profile rename/i }));
+
+  expect(
+    screen.getByRole("button", { name: /tony long term/i })
+  ).toBeInTheDocument();
+});
+
+test("rejects blank profile rename values", async () => {
+  const user = userEvent.setup();
+
+  seedProfileData();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /my portfolio/i }));
+  await user.click(screen.getByRole("button", { name: /rename my portfolio/i }));
+  await user.clear(screen.getByLabelText(/rename profile name/i));
+  await user.click(screen.getByRole("button", { name: /save profile rename/i }));
+
+  expect(screen.getByText(/please enter a profile name/i)).toBeInTheDocument();
+});
+
+test("deletes a non-active profile and keeps the active profile unchanged", async () => {
+  const user = userEvent.setup();
+
+  seedProfileData();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /my portfolio/i }));
+  await user.click(screen.getByRole("button", { name: /delete trading desk/i }));
+  await user.click(
+    screen.getByRole("button", { name: /confirm delete trading desk/i })
+  );
+
+  expect(screen.getByRole("button", { name: /my portfolio/i })).toBeInTheDocument();
+  expect(screen.queryByText(/trading desk/i)).not.toBeInTheDocument();
+});
+
+test("deletes the active profile and switches to the first remaining profile", async () => {
+  const user = userEvent.setup();
+
+  seedProfileData();
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /my portfolio/i }));
+  await user.click(screen.getByRole("button", { name: /delete my portfolio/i }));
+  await user.click(
+    screen.getByRole("button", { name: /confirm delete my portfolio/i })
+  );
+
+  const holdings = screen.getByRole("region", { name: /^holdings$/i });
+
+  expect(screen.getByRole("button", { name: /trading desk/i })).toBeInTheDocument();
+  expect(within(holdings).getByText(/ethereum · 100.0%/i)).toBeInTheDocument();
+});
+
+test("prevents deleting the last remaining profile", async () => {
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await user.click(screen.getByRole("button", { name: /my portfolio/i }));
+
+  expect(
+    screen.queryByRole("button", { name: /delete my portfolio/i })
+  ).not.toBeInTheDocument();
 });
 
 test("recalculates purchase price when amount invested and purchase shares are entered", async () => {

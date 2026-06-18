@@ -18,6 +18,8 @@ export default function App() {
     activeProfile,
     activeTransactions,
     createProfile,
+    renameProfile,
+    deleteProfile,
     switchProfile,
     saveActiveTransactions
   } = useProfiles();
@@ -47,6 +49,8 @@ export default function App() {
               profiles={profiles}
               activeProfile={activeProfile}
               onCreateProfile={createProfile}
+              onRenameProfile={renameProfile}
+              onDeleteProfile={deleteProfile}
               onSwitchProfile={switchProfile}
             />
           </div>
