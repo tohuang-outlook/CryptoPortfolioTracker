@@ -7,31 +7,97 @@ export function PriceStatus({
 }) {
   if (status === "loading") {
     return (
-      <p role="status" aria-live="polite" aria-atomic="true">
-        Loading live prices...
-      </p>
+      <div
+        className="price-status price-status--loading"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <p className="price-status__headline">Loading live prices...</p>
+        <p className="price-status__detail">
+          Checking the latest market prices now.
+        </p>
+      </div>
     );
   }
 
   if (status === "error") {
     return (
-      <p role="alert" aria-live="assertive" aria-atomic="true">
-        Live prices are temporarily unavailable.
-      </p>
+      <div
+        className="price-status price-status--error"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        <p className="price-status__headline">
+          Live prices are temporarily unavailable.
+        </p>
+        <p className="price-status__detail">
+          {lastUpdated
+            ? `Showing the last successful update from ${formatLastUpdated(lastUpdated)}.`
+            : "We will try again automatically in about a minute."}
+        </p>
+      </div>
     );
   }
 
   if (status === "ready" && lastUpdated) {
     return (
-      <p role="status" aria-live="polite" aria-atomic="true">
-        Live prices updated.
-      </p>
+      <div
+        className="price-status price-status--ready"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <p className="price-status__headline">Live prices updated.</p>
+        <p className="price-status__detail">
+          Updated {formatLastUpdated(lastUpdated)}.
+        </p>
+      </div>
     );
   }
 
   return (
-    <p role="status" aria-live="polite" aria-atomic="true">
-      Waiting for live prices.
-    </p>
+    <div
+      className="price-status price-status--idle"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <p className="price-status__headline">Waiting for live prices.</p>
+      <p className="price-status__detail">
+        Prices will appear here after the first refresh completes.
+      </p>
+    </div>
   );
+}
+
+function formatLastUpdated(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "recently";
+  }
+
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  const timeLabel = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+
+  if (sameDay) {
+    return `today at ${timeLabel}`;
+  }
+
+  const dateLabel = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric"
+  }).format(date);
+
+  return `${dateLabel} at ${timeLabel}`;
 }

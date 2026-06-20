@@ -102,6 +102,30 @@ h1 {
   gap: 14px;
 }
 
+.price-status {
+  display: grid;
+  gap: 4px;
+}
+
+.price-status__headline,
+.price-status__detail {
+  margin: 0;
+}
+
+.price-status__headline {
+  font-weight: 700;
+  color: #16313a;
+}
+
+.price-status__detail {
+  font-size: 0.92rem;
+  color: #5a7674;
+}
+
+.price-status--error .price-status__headline {
+  color: #9f4b36;
+}
+
 .profile-switcher {
   position: relative;
 }
