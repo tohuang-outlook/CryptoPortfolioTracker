@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SUPPORTED_ASSETS } from "../constants/assets";
-import { createTransactionRepository } from "../data/transactionRepository";
 import { buildPortfolioSnapshot } from "../domain/portfolio";
 import { validateTransactionInput } from "../domain/validation";
 import type {
@@ -8,8 +7,6 @@ import type {
   Transaction,
   TransactionFormInput
 } from "../types/portfolio";
-
-const repository = createTransactionRepository();
 
 interface MutateTransactionInput extends TransactionFormInput {
   id: string;
@@ -19,11 +16,13 @@ type TransactionMutationResult =
   | { success: true }
   | { success: false; error: string };
 
-export function usePortfolio(prices: PriceMap) {
-  const [transactions, setTransactions] = useState<Transaction[]>(() =>
-    repository.loadAll()
-  );
+export function usePortfolio(
+  prices: PriceMap,
+  transactions: Transaction[],
+  saveTransactions: (updatedTransactions: Transaction[]) => TransactionMutationResult
+) {
   const transactionsRef = useRef(transactions);
+  const [, forceRender] = useState(0);
 
   useEffect(() => {
     transactionsRef.current = transactions;
@@ -33,21 +32,6 @@ export function usePortfolio(prices: PriceMap) {
     () => buildPortfolioSnapshot(transactions, prices),
     [transactions, prices]
   );
-
-  function persistTransactions(
-    updatedTransactions: Transaction[]
-  ): TransactionMutationResult {
-    const saveResult = repository.saveAll(updatedTransactions);
-
-    if (!saveResult.success) {
-      return saveResult;
-    }
-
-    transactionsRef.current = updatedTransactions;
-    setTransactions(updatedTransactions);
-
-    return { success: true };
-  }
 
   function addTransaction(
     input: TransactionFormInput
@@ -85,8 +69,14 @@ export function usePortfolio(prices: PriceMap) {
     };
 
     const updatedTransactions = [nextTransaction, ...transactionsRef.current];
+    const saveResult = saveTransactions(updatedTransactions);
+    if (!saveResult.success) {
+      return saveResult;
+    }
 
-    return persistTransactions(updatedTransactions);
+    transactionsRef.current = updatedTransactions;
+    forceRender((count) => count + 1);
+    return { success: true };
   }
 
   function updateTransaction(
@@ -135,8 +125,14 @@ export function usePortfolio(prices: PriceMap) {
           }
         : transaction
     );
+    const saveResult = saveTransactions(updatedTransactions);
+    if (!saveResult.success) {
+      return saveResult;
+    }
 
-    return persistTransactions(updatedTransactions);
+    transactionsRef.current = updatedTransactions;
+    forceRender((count) => count + 1);
+    return { success: true };
   }
 
   function deleteTransaction(id: string): TransactionMutationResult {
@@ -150,8 +146,14 @@ export function usePortfolio(prices: PriceMap) {
         error: "Unable to find that transaction."
       };
     }
+    const saveResult = saveTransactions(updatedTransactions);
+    if (!saveResult.success) {
+      return saveResult;
+    }
 
-    return persistTransactions(updatedTransactions);
+    transactionsRef.current = updatedTransactions;
+    forceRender((count) => count + 1);
+    return { success: true };
   }
 
   return {

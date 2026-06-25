@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createTransactionRepository } from "./transactionRepository";
 
+const defaultProfileId = "profile-1";
+
 describe("transactionRepository", () => {
   beforeEach(() => {
     const storage = createStorageMock();
@@ -10,20 +12,29 @@ describe("transactionRepository", () => {
     });
   });
 
-  it("persists and reads transactions", () => {
+  it("persists and reads transactions by profile id", () => {
     const repo = createTransactionRepository();
-    expect(repo.saveAll([validTransaction()])).toEqual({ success: true });
+    expect(
+      repo.saveTransactionsByProfileId({
+        [defaultProfileId]: [validTransaction()]
+      })
+    ).toEqual({ success: true });
 
-    expect(repo.loadAll()).toHaveLength(1);
+    expect(repo.loadTransactionsByProfileId()).toEqual({
+      [defaultProfileId]: [validTransaction()]
+    });
   });
 
-  it("falls back to an empty array for malformed storage", () => {
-    window.localStorage.setItem("crypto-portfolio-transactions", "not-json");
+  it("falls back to an empty map for malformed profile storage", () => {
+    window.localStorage.setItem(
+      "crypto-portfolio-transactions-by-profile",
+      "not-json"
+    );
     const repo = createTransactionRepository();
-    expect(repo.loadAll()).toEqual([]);
+    expect(repo.loadTransactionsByProfileId()).toEqual({});
   });
 
-  it("returns an empty array when localStorage access throws during load", () => {
+  it("returns an empty map when localStorage access throws during load", () => {
     Object.defineProperty(window, "localStorage", {
       get() {
         throw new Error("SecurityError");
@@ -32,7 +43,7 @@ describe("transactionRepository", () => {
     });
 
     const repo = createTransactionRepository();
-    expect(repo.loadAll()).toEqual([]);
+    expect(repo.loadTransactionsByProfileId()).toEqual({});
   });
 
   it("returns a failure result when localStorage throws during save", () => {
@@ -48,105 +59,86 @@ describe("transactionRepository", () => {
 
     const repo = createTransactionRepository();
 
-    expect(repo.saveAll([validTransaction()])).toEqual({
+    expect(
+      repo.saveTransactionsByProfileId({
+        [defaultProfileId]: [validTransaction()]
+      })
+    ).toEqual({
       success: false,
       error: "Unable to save transaction. Please try again."
     });
   });
 
-  it("filters out structurally invalid persisted rows", () => {
+  it("filters out structurally invalid persisted rows inside transaction maps", () => {
     window.localStorage.setItem(
-      "crypto-portfolio-transactions",
-      JSON.stringify([
-        {
-          id: "btc-1",
-          assetSymbol: "BTC",
-          assetName: "Bitcoin",
-          type: "buy",
-          amountInvested: 1000,
-          purchasePrice: 50000,
-          quantity: 0.02,
-          purchaseDate: "2026-06-01",
-          notes: "",
-          createdAt: "2026-06-01T00:00:00.000Z",
-          updatedAt: "2026-06-01T00:00:00.000Z"
-        },
-        {
-          id: 123,
-          assetSymbol: "BTC"
-        }
-      ])
+      "crypto-portfolio-transactions-by-profile",
+      JSON.stringify({
+        [defaultProfileId]: [
+          validTransaction(),
+          {
+            id: 123,
+            assetSymbol: "BTC"
+          }
+        ]
+      })
     );
 
     const repo = createTransactionRepository();
 
-    expect(repo.loadAll()).toEqual([
-      {
-        id: "btc-1",
-        assetSymbol: "BTC",
-        assetName: "Bitcoin",
-        type: "buy",
-        amountInvested: 1000,
-        purchasePrice: 50000,
-        quantity: 0.02,
-        purchaseDate: "2026-06-01",
-        notes: "",
-        createdAt: "2026-06-01T00:00:00.000Z",
-        updatedAt: "2026-06-01T00:00:00.000Z"
-      }
-    ]);
+    expect(repo.loadTransactionsByProfileId()).toEqual({
+      [defaultProfileId]: [validTransaction()]
+    });
   });
 
-  it("filters out persisted rows with invalid transaction values", () => {
+  it("filters out malformed transaction-map entries entirely", () => {
     window.localStorage.setItem(
-      "crypto-portfolio-transactions",
-      JSON.stringify([
-        {
-          id: "btc-1",
-          assetSymbol: "BTC",
-          assetName: "Bitcoin",
-          type: "buy",
-          amountInvested: 1000,
-          purchasePrice: 50000,
-          quantity: 0.02,
-          purchaseDate: "2026-06-01",
-          notes: "",
-          createdAt: "2026-06-01T00:00:00.000Z",
-          updatedAt: "2026-06-01T00:00:00.000Z"
-        },
-        {
-          id: "bad-1",
-          assetSymbol: "ETH",
-          assetName: "Ethereum",
-          type: "buy",
-          amountInvested: 0,
-          purchasePrice: -1,
-          quantity: 0,
-          purchaseDate: "",
-          notes: "",
-          createdAt: "2026-06-01T00:00:00.000Z",
-          updatedAt: "2026-06-01T00:00:00.000Z"
-        }
-      ])
+      "crypto-portfolio-transactions-by-profile",
+      JSON.stringify({
+        [defaultProfileId]: [validTransaction()],
+        broken: "not-an-array"
+      })
     );
 
     const repo = createTransactionRepository();
 
-    expect(repo.loadAll()).toEqual([
-      {
-        id: "btc-1",
-        assetSymbol: "BTC",
-        assetName: "Bitcoin",
-        type: "buy",
-        amountInvested: 1000,
-        purchasePrice: 50000,
-        quantity: 0.02,
-        purchaseDate: "2026-06-01",
-        notes: "",
-        createdAt: "2026-06-01T00:00:00.000Z",
-        updatedAt: "2026-06-01T00:00:00.000Z"
-      }
-    ]);
+    expect(repo.loadTransactionsByProfileId()).toEqual({
+      [defaultProfileId]: [validTransaction()]
+    });
+  });
+
+  it("loads legacy transactions from the old storage key", () => {
+    window.localStorage.setItem(
+      "crypto-portfolio-transactions",
+      JSON.stringify([validTransaction()])
+    );
+
+    const repo = createTransactionRepository();
+
+    expect(repo.loadLegacyTransactions()).toEqual([validTransaction()]);
+  });
+
+  it("migrates legacy transactions into a default profile map", () => {
+    const repo = createTransactionRepository();
+
+    expect(
+      repo.migrateLegacyTransactionsToProfileMap({
+        legacyTransactions: [validTransaction()],
+        defaultProfileId
+      })
+    ).toEqual({
+      [defaultProfileId]: [validTransaction()]
+    });
+  });
+
+  it("returns an empty map when there are no legacy transactions to migrate", () => {
+    const repo = createTransactionRepository();
+
+    expect(
+      repo.migrateLegacyTransactionsToProfileMap({
+        legacyTransactions: [],
+        defaultProfileId
+      })
+    ).toEqual({});
   });
 });
 

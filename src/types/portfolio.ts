@@ -22,6 +22,15 @@ export interface Transaction {
   updatedAt: string;
 }
 
+export interface Profile {
+  id: string;
+  name: string;
+  avatarColor: string;
+  createdAt: string;
+}
+
+export type TransactionsByProfileId = Record<string, Transaction[]>;
+
 export interface TransactionFormInput {
   assetSymbol: string;
   amountInvested: string;

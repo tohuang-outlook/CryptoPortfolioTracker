@@ -1,12 +1,62 @@
-import type { Transaction } from "../types/portfolio";
+import type {
+  Transaction,
+  TransactionsByProfileId
+} from "../types/portfolio";
 import { SUPPORTED_ASSETS } from "../constants/assets";
 
-const STORAGE_KEY = "crypto-portfolio-transactions";
+const LEGACY_STORAGE_KEY = "crypto-portfolio-transactions";
+const PROFILE_STORAGE_KEY = "crypto-portfolio-transactions-by-profile";
 
 export function createTransactionRepository() {
   return {
-    loadAll(): Transaction[] {
-      const raw = readStorageItem(STORAGE_KEY);
+    hasTransactionsByProfileIdStorage() {
+      return readStorageItem(PROFILE_STORAGE_KEY) !== null;
+    },
+    loadTransactionsByProfileId(): TransactionsByProfileId {
+      const raw = readStorageItem(PROFILE_STORAGE_KEY);
+      if (raw === null) {
+        return {};
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (!isRecord(parsed)) {
+          return {};
+        }
+
+        return Object.fromEntries(
+          Object.entries(parsed)
+            .filter((entry): entry is [string, unknown[]] => {
+              const [profileId, transactions] = entry;
+              return typeof profileId === "string" && Array.isArray(transactions);
+            })
+            .map(([profileId, transactions]) => [
+              profileId,
+              transactions.filter(isTransaction)
+            ])
+        );
+      } catch {
+        return {};
+      }
+    },
+    saveTransactionsByProfileId(
+      transactionsByProfileId: TransactionsByProfileId
+    ) {
+      try {
+        window.localStorage.setItem(
+          PROFILE_STORAGE_KEY,
+          JSON.stringify(transactionsByProfileId)
+        );
+        return { success: true as const };
+      } catch {
+        return {
+          success: false as const,
+          error: "Unable to save transaction. Please try again."
+        };
+      }
+    },
+    loadLegacyTransactions(): Transaction[] {
+      const raw = readStorageItem(LEGACY_STORAGE_KEY);
       if (raw === null) {
         return [];
       }
@@ -22,16 +72,20 @@ export function createTransactionRepository() {
         return [];
       }
     },
-    saveAll(transactions: Transaction[]) {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
-        return { success: true as const };
-      } catch {
-        return {
-          success: false as const,
-          error: "Unable to save transaction. Please try again."
-        };
+    migrateLegacyTransactionsToProfileMap({
+      legacyTransactions,
+      defaultProfileId
+    }: {
+      legacyTransactions: Transaction[];
+      defaultProfileId: string;
+    }): TransactionsByProfileId {
+      if (legacyTransactions.length === 0) {
+        return {};
       }
+
+      return {
+        [defaultProfileId]: legacyTransactions
+      };
     }
   };
 }
