@@ -35,6 +35,10 @@ export function BitcoinForecastDashboard() {
     forecast: Math.round(record.predictedClose),
     actual: Math.round(record.actualClose!)
   }));
+  const journalRecords = forecast.records
+    .filter((record) => (record.horizon ?? "daily") === "daily")
+    .sort((left, right) => right.targetDate.localeCompare(left.targetDate))
+    .slice(0, 14);
 
   return (
     <section className="forecast-dashboard">
@@ -94,6 +98,34 @@ export function BitcoinForecastDashboard() {
           <span className="forecast-status-card__tag">{t("{count} settled forecasts", { count: forecast.rangeCalibration.settledCount })}</span>
         </article>
       </section>
+
+      <article className="panel forecast-panel">
+        <div className="panel__header">
+          <div>
+            <p className="panel__eyebrow">{t("Daily forecast journal")}</p>
+            <h2>{t("Daily decision record")}</h2>
+            <p className="forecast-panel__copy">{t("Each entry preserves the forecast state that was known before that daily close." )}</p>
+          </div>
+        </div>
+        <div className="forecast-journal" role="table" aria-label={t("Daily forecast journal")}>
+          <div className="forecast-journal__header" role="row">
+            <span role="columnheader">{t("Date")}</span>
+            <span role="columnheader">{t("Market regime")}</span>
+            <span role="columnheader">{t("Forecast")}</span>
+            <span role="columnheader">{t("Expected return")}</span>
+            <span role="columnheader">{t("Actual")}</span>
+          </div>
+          {journalRecords.map((record) => (
+            <div className="forecast-journal__row" role="row" key={`${record.horizon ?? "daily"}-${record.targetDate}`}>
+              <strong role="cell">{shortDate(record.targetDate, language)}</strong>
+              <span role="cell">{record.marketRegime ? t(regimeLabel(record.marketRegime)) : "-"}</span>
+              <span role="cell">{currency.format(record.predictedClose)}<small>{formatWeights(record, t)}</small></span>
+              <span role="cell" className={record.expectedReturnPercent && record.expectedReturnPercent < 0 ? "forecast-journal__negative" : "forecast-journal__positive"}>{formatExpectedReturn(record)}</span>
+              <span role="cell">{record.actualClose === undefined ? t("Awaiting close") : currency.format(record.actualClose)}</span>
+            </div>
+          ))}
+        </div>
+      </article>
 
       <section className="forecast-layout">
         <article className="panel forecast-panel">
@@ -198,4 +230,22 @@ function ForecastMetric({ label, value, detail }: { label: string; value: string
 
 function shortDate(value: string, language: string) {
   return new Intl.DateTimeFormat(language === "zh-TW" ? "zh-TW" : "en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function regimeLabel(regime: "uptrend" | "downtrend" | "range" | "volatile") {
+  return { uptrend: "Uptrend", downtrend: "Downtrend", range: "Range-bound", volatile: "High volatility" }[regime];
+}
+
+function formatExpectedReturn(record: { expectedReturnPercent?: number; predictedClose: number; baseClose: number }) {
+  const value = record.expectedReturnPercent ?? ((record.predictedClose / record.baseClose) - 1) * 100;
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatWeights(record: { modelWeights?: Partial<Record<"technical" | "trend" | "meanReversion", number>> }, t: (key: string) => string) {
+  if (!record.modelWeights) return null;
+  const names = { technical: "Technical signals", trend: "Trend follow", meanReversion: "Mean reversion" };
+  return Object.entries(record.modelWeights)
+    .sort(([, left], [, right]) => (right ?? 0) - (left ?? 0))
+    .map(([id, weight]) => `${t(names[id as keyof typeof names])} ${(weight! * 100).toFixed(0)}%`)
+    .join(" · ");
 }

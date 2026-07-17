@@ -18,6 +18,10 @@ export interface ForecastRecord {
   upperBound: number;
   confidence: number;
   actualClose?: number;
+  marketRegime?: MarketRegimeId;
+  direction?: "Bullish" | "Bearish" | "Neutral";
+  expectedReturnPercent?: number;
+  modelWeights?: Partial<Record<ForecastModelId, number>>;
 }
 
 export interface ForecastHorizon {

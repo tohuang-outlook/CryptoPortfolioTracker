@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, Notification } from "electron";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,7 +43,10 @@ function createMainWindow() {
 app.whenReady().then(async () => {
   if (process.argv.includes("--run-forecast-update")) {
     try {
-      await runForecastUpdate(app.getPath("userData"));
+      const alerts = await runForecastUpdate(app.getPath("userData"));
+      if (Notification.isSupported()) {
+        alerts.forEach((alert) => new Notification({ title: alert.title, body: alert.body }).show());
+      }
     } finally {
       app.quit();
     }

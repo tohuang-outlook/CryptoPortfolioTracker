@@ -9,6 +9,7 @@ import {
   calculateVolatility,
   clamp
 } from "../src/data/forecastModels.js";
+import { detectForecastAlerts, type ForecastAlert } from "../src/data/forecastAlerts.js";
 
 const FORECAST_FILE_NAME = "bitcoin-forecast-records.json";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -34,16 +35,27 @@ interface RecordItem {
   upperBound: number;
   confidence: number;
   actualClose?: number;
+  marketRegime?: "uptrend" | "downtrend" | "range" | "volatile";
+  direction?: "Bullish" | "Bearish" | "Neutral";
+  expectedReturnPercent?: number;
+  modelWeights?: Partial<Record<"technical" | "trend" | "meanReversion", number>>;
 }
 
-export async function runForecastUpdate(userDataPath: string) {
+export async function runForecastUpdate(userDataPath: string): Promise<ForecastAlert[]> {
   const candles = await fetchDailyCandles();
   const filePath = path.join(userDataPath, FORECAST_FILE_NAME);
   const existingRecords = await readRecords(filePath);
   const records = reconcileRecords(existingRecords, candles);
+  const newlySettled = records.filter(
+    (record, index) => record.actualClose !== undefined && existingRecords[index]?.actualClose === undefined
+  );
   const nextRecords = upsertForecasts(records, candles);
+  const currentDaily = nextRecords.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1)!;
+  const previousDaily = records.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1);
+  const alerts = detectForecastAlerts(previousDaily, currentDaily, newlySettled);
 
   await writeRecords(filePath, nextRecords);
+  return alerts;
 }
 
 async function fetchDailyCandles(): Promise<Candle[]> {
@@ -133,7 +145,11 @@ function upsertForecasts(records: RecordItem[], candles: Candle[]) {
         (dailyCalibration.observedCoverage === null ? 0 : Math.abs(dailyCalibration.observedCoverage - dailyCalibration.targetCoverage) * 30),
       38,
       78
-    ))
+    )),
+    marketRegime: ensemble.marketRegime.id,
+    direction: getDirection(dailyExpectedReturn, 0.003),
+    expectedReturnPercent: dailyExpectedReturn * 100,
+    modelWeights: Object.fromEntries(ensemble.leaderboard.map((model) => [model.id, model.weight]))
   });
   const weeklyPrediction = makeRecord({
     horizon: "weekly",
@@ -146,22 +162,29 @@ function upsertForecasts(records: RecordItem[], candles: Candle[]) {
         (weeklyCalibration.observedCoverage === null ? 0 : Math.abs(weeklyCalibration.observedCoverage - weeklyCalibration.targetCoverage) * 28),
       32,
       70
-    ))
+    )),
+    marketRegime: ensemble.marketRegime.id,
+    direction: getDirection(weeklyExpectedReturn, 0.012),
+    expectedReturnPercent: weeklyExpectedReturn * 100
   });
 
   return upsertRecord(upsertRecord(records, dailyPrediction), weeklyPrediction).slice(-180);
 }
 
-function makeRecord({ horizon, targetDate, baseClose, expectedReturn, rangePercent, confidence }: {
+function makeRecord({ horizon, targetDate, baseClose, expectedReturn, rangePercent, confidence, marketRegime, direction, expectedReturnPercent, modelWeights }: {
   horizon: "daily" | "weekly";
   targetDate: string;
   baseClose: number;
   expectedReturn: number;
   rangePercent: number;
   confidence: number;
+  marketRegime?: RecordItem["marketRegime"];
+  direction?: RecordItem["direction"];
+  expectedReturnPercent?: number;
+  modelWeights?: RecordItem["modelWeights"];
 }): RecordItem {
   const predictedClose = baseClose * (1 + expectedReturn);
-  return { horizon, targetDate, createdAt: new Date().toISOString(), baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence };
+  return { horizon, targetDate, createdAt: new Date().toISOString(), baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights };
 }
 
 function upsertRecord(records: RecordItem[], record: RecordItem) {
@@ -179,6 +202,8 @@ function calculateBias(records: RecordItem[], horizon: "daily" | "weekly") {
 }
 
 function getHorizon(record: RecordItem) { return record.horizon ?? "daily"; }
+function byTargetDate(left: RecordItem, right: RecordItem) { return left.targetDate.localeCompare(right.targetDate); }
+function getDirection(expectedReturn: number, threshold: number): "Bullish" | "Bearish" | "Neutral" { return expectedReturn > threshold ? "Bullish" : expectedReturn < -threshold ? "Bearish" : "Neutral"; }
 function toDate(timestamp: number) { return new Date(timestamp).toISOString().slice(0, 10); }
 function calculateVolumeConfirmation(dailyReturn: number, ratio: number) { return Math.abs(dailyReturn) < 0.002 || ratio <= 1 ? 0 : Math.sign(dailyReturn) * clamp((ratio - 1) * 0.012, 0, 0.024); }
 function volumeConfidence(dailyReturn: number, ratio: number) { if (Math.abs(dailyReturn) < 0.002) return 0; if (ratio >= 1.15) return clamp((ratio - 1) * 8, 0, 6); return ratio <= 0.8 ? -4 : 0; }

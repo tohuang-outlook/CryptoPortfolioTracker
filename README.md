@@ -70,3 +70,7 @@ After opening the packaged Mac app once, it registers a macOS background task th
 The daily forecast combines technical signals, trend-following, and mean-reversion models. Each model is tested with a rolling 60-day walk-forward backtest: every historical prediction uses only candles that were available on that date. The app gives models with lower recent error and stronger directional accuracy more ensemble weight, then displays the resulting leaderboard in the Bitcoin Forecast workspace.
 
 The ensemble also classifies the current market as an uptrend, downtrend, range-bound, or high-volatility state, and uses that state to adapt the candidate-model weights. After at least eight settled forecasts, the expected range is calibrated against its recent coverage: ranges widen when actual closes are missing the target coverage and narrow when they are overly conservative.
+
+## Forecast Journal And Notifications
+
+Every daily forecast records its market regime, direction, expected return, and ensemble weights in the Forecast Journal. The packaged Mac app also sends a native notification when the market regime or forecast direction changes, forecast confidence moves by at least 15 percentage points, or a newly settled close finishes outside its forecast range. These checks run with the existing hourly macOS background task.

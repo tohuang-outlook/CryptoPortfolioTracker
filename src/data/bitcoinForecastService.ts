@@ -247,7 +247,13 @@ function upsertForecastRecords(
     predictedClose: forecast.predictedClose,
     lowerBound: forecast.lowerBound,
     upperBound: forecast.upperBound,
-    confidence: forecast.confidence
+    confidence: forecast.confidence,
+    marketRegime: forecast.marketRegime.id,
+    direction: forecast.direction,
+    expectedReturnPercent: forecast.expectedReturnPercent,
+    modelWeights: Object.fromEntries(
+      forecast.modelLeaderboard.map((model) => [model.id, model.weight])
+    )
   };
   const weeklyRecord: ForecastRecord = {
     horizon: "weekly",
@@ -257,7 +263,10 @@ function upsertForecastRecords(
     predictedClose: forecast.weeklyForecast.predictedClose,
     lowerBound: forecast.weeklyForecast.lowerBound,
     upperBound: forecast.weeklyForecast.upperBound,
-    confidence: forecast.weeklyForecast.confidence
+    confidence: forecast.weeklyForecast.confidence,
+    marketRegime: forecast.marketRegime.id,
+    direction: forecast.weeklyForecast.direction,
+    expectedReturnPercent: forecast.weeklyForecast.expectedReturnPercent
   };
 
   return upsertForecastRecord(upsertForecastRecord(records, dailyRecord), weeklyRecord).slice(-180);

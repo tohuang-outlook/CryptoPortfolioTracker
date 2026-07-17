@@ -764,6 +764,10 @@ button:hover {
 .model-leaderboard__header { background: #eef7f6; color: #557176; font-size: .76rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .model-leaderboard__row { border-top: 1px solid rgba(22, 49, 58, 0.08); color: #36535a; }
 .model-leaderboard__row strong { color: #193941; }.model-leaderboard__row b { color: #15725f; }
+.forecast-journal { margin-top: 18px; border: 1px solid rgba(22, 49, 58, 0.1); border-radius: 16px; overflow: hidden; }
+.forecast-journal__header, .forecast-journal__row { display: grid; grid-template-columns: minmax(95px, .65fr) minmax(130px, .9fr) minmax(180px, 1.15fr) minmax(115px, .7fr) minmax(115px, .7fr); gap: 16px; align-items: center; padding: 14px 16px; }
+.forecast-journal__header { background: #eef7f6; color: #557176; font-size: .76rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.forecast-journal__row { border-top: 1px solid rgba(22, 49, 58, 0.08); color: #36535a; }.forecast-journal__row strong { color: #193941; }.forecast-journal__row small { display: block; margin-top: 3px; color: #66807d; font-size: .75rem; line-height: 1.4; }.forecast-journal__positive { color: #15725f; font-weight: 700; }.forecast-journal__negative { color: #b2573f; font-weight: 700; }
 .signal-list { display: grid; }
 .signal-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 15px 0; border-bottom: 1px solid rgba(22, 49, 58, 0.08); }
 .signal-row:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -803,6 +807,8 @@ button:hover {
 
   .model-leaderboard { overflow-x: auto; }
   .model-leaderboard__header, .model-leaderboard__row { min-width: 650px; }
+  .forecast-journal { overflow-x: auto; }
+  .forecast-journal__header, .forecast-journal__row { min-width: 720px; }
 
   .content-grid {
     grid-template-columns: 1fr;
