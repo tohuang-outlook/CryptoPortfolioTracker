@@ -753,6 +753,12 @@ button:hover {
 
 .forecast-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr); gap: 24px; }
 .forecast-panel { min-width: 0; }
+.forecast-panel__copy { margin: 8px 0 0; color: #5a7674; line-height: 1.55; }
+.model-leaderboard { margin-top: 18px; border: 1px solid rgba(22, 49, 58, 0.1); border-radius: 16px; overflow: hidden; }
+.model-leaderboard__header, .model-leaderboard__row { display: grid; grid-template-columns: minmax(180px, 1.5fr) repeat(4, minmax(90px, .7fr)); gap: 16px; align-items: center; padding: 14px 16px; }
+.model-leaderboard__header { background: #eef7f6; color: #557176; font-size: .76rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.model-leaderboard__row { border-top: 1px solid rgba(22, 49, 58, 0.08); color: #36535a; }
+.model-leaderboard__row strong { color: #193941; }.model-leaderboard__row b { color: #15725f; }
 .signal-list { display: grid; }
 .signal-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 15px 0; border-bottom: 1px solid rgba(22, 49, 58, 0.08); }
 .signal-row:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -787,6 +793,9 @@ button:hover {
   .forecast-summary-grid { grid-template-columns: 1fr; }
 
   .weekly-forecast { grid-template-columns: 1fr; }
+
+  .model-leaderboard { overflow-x: auto; }
+  .model-leaderboard__header, .model-leaderboard__row { min-width: 650px; }
 
   .content-grid {
     grid-template-columns: 1fr;

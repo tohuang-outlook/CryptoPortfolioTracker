@@ -64,3 +64,7 @@ If macOS still blocks launch, open `System Settings > Privacy & Security` and al
 ## Automatic Bitcoin Forecast Updates
 
 After opening the packaged Mac app once, it registers a macOS background task that checks Coinbase hourly. When a new UTC daily BTC close is available, it saves the updated daily and weekly forecasts and reconciles prior forecast results, even while the app is closed. The Mac must be powered on and your user account must be signed in for the background task to run.
+
+## Forecast Ensemble And Backtesting
+
+The daily forecast combines technical signals, trend-following, and mean-reversion models. Each model is tested with a rolling 60-day walk-forward backtest: every historical prediction uses only candles that were available on that date. The app gives models with lower recent error and stronger directional accuracy more ensemble weight, then displays the resulting leaderboard in the Bitcoin Forecast workspace.

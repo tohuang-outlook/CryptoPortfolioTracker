@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["electron/main.ts", "electron/forecastUpdate.ts"]
+  "include": ["electron/main.ts", "electron/forecastUpdate.ts", "src/data/forecastModels.ts", "src/types/forecast.ts"]
 }

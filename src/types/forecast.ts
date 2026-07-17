@@ -37,6 +37,17 @@ export interface ForecastSignal {
   detail: string;
 }
 
+export type ForecastModelId = "technical" | "trend" | "meanReversion";
+
+export interface ForecastModelPerformance {
+  id: ForecastModelId;
+  label: string;
+  meanAbsolutePercentError: number;
+  directionalAccuracy: number;
+  weight: number;
+  evaluatedDays: number;
+}
+
 export interface BitcoinForecast {
   asOfDate: string;
   currentClose: number;
@@ -49,6 +60,7 @@ export interface BitcoinForecast {
   direction: "Bullish" | "Bearish" | "Neutral";
   weeklyForecast: ForecastHorizon;
   signals: ForecastSignal[];
+  modelLeaderboard: ForecastModelPerformance[];
   records: ForecastRecord[];
   accuracy: {
     settledCount: number;

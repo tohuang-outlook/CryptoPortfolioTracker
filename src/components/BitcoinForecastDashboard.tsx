@@ -112,6 +112,34 @@ export function BitcoinForecastDashboard() {
         </article>
       </section>
 
+      <article className="panel forecast-panel">
+        <div className="panel__header">
+          <div>
+            <p className="panel__eyebrow">{t("Walk-forward testing")}</p>
+            <h2>{t("Model leaderboard")}</h2>
+            <p className="forecast-panel__copy">{t("Recent 60-day forecasts are evaluated without using future closes. Lower error receives more ensemble weight.")}</p>
+          </div>
+        </div>
+        <div className="model-leaderboard" role="table" aria-label={t("Model leaderboard")}>
+          <div className="model-leaderboard__header" role="row">
+            <span role="columnheader">{t("Model")}</span>
+            <span role="columnheader">{t("Weight")}</span>
+            <span role="columnheader">{t("Average error")}</span>
+            <span role="columnheader">{t("Direction accuracy")}</span>
+            <span role="columnheader">{t("Test days")}</span>
+          </div>
+          {forecast.modelLeaderboard.map((model) => (
+            <div className="model-leaderboard__row" role="row" key={model.id}>
+              <strong role="cell">{t(model.label)}</strong>
+              <span role="cell"><b>{(model.weight * 100).toFixed(0)}%</b></span>
+              <span role="cell">{model.meanAbsolutePercentError.toFixed(2)}%</span>
+              <span role="cell">{model.directionalAccuracy.toFixed(0)}%</span>
+              <span role="cell">{model.evaluatedDays}</span>
+            </div>
+          ))}
+        </div>
+      </article>
+
       <article className="panel forecast-panel forecast-panel--wide">
         <div className="panel__header">
           <div>

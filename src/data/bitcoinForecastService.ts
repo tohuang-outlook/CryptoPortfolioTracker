@@ -5,6 +5,14 @@ import type {
   ForecastRecord,
   ForecastSignal
 } from "../types/forecast";
+import {
+  average,
+  buildDailyEnsemble,
+  calculateEma,
+  calculateRsi,
+  calculateVolatility,
+  clamp
+} from "./forecastModels";
 
 const COINBASE_BTC_CANDLES_URL =
   "https://api.exchange.coinbase.com/products/BTC-USD/candles";
@@ -109,13 +117,10 @@ function buildForecast(
     latestDailyReturn,
     volumeRatio
   );
+  const ensemble = buildDailyEnsemble(candles);
   const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
-    trendPercent * 0.7 +
-      macdPercent * 0.55 -
-      ((rsi14 - 50) / 100) * 0.012 +
-      volumeConfirmation +
-      correction,
+    ensemble.expectedReturn + correction,
     -0.12,
     0.12
   );
@@ -173,6 +178,12 @@ function buildForecast(
       detail: getVolumeDetail(latestDailyReturn, volumeRatio)
     },
     {
+      label: "Ensemble model",
+      value: `${ensemble.leaderboard.length} models`,
+      direction: "neutral",
+      detail: "Weights adapt to each model's recent walk-forward accuracy."
+    },
+    {
       label: "Model correction",
       value: formatSignedPercent(correction),
       direction: correction > 0.001 ? "positive" : correction < -0.001 ? "negative" : "neutral",
@@ -193,7 +204,8 @@ function buildForecast(
     expectedReturnPercent: expectedReturn * 100,
     direction,
     weeklyForecast,
-    signals
+    signals,
+    modelLeaderboard: ensemble.leaderboard
   };
 }
 
@@ -379,32 +391,6 @@ function getRecordHorizon(record: ForecastRecord) {
   return record.horizon ?? "daily";
 }
 
-function calculateRsi(closes: number[]) {
-  const changes = closes.slice(1).map((close, index) => close - closes[index]);
-  const gains = changes.map((change) => Math.max(change, 0));
-  const losses = changes.map((change) => Math.max(-change, 0));
-  const averageGain = average(gains);
-  const averageLoss = average(losses);
-
-  if (averageLoss === 0) {
-    return 100;
-  }
-
-  const relativeStrength = averageGain / averageLoss;
-  return 100 - 100 / (1 + relativeStrength);
-}
-
-function calculateEma(values: number[], period: number) {
-  const multiplier = 2 / (period + 1);
-  return values.reduce((ema, value) => value * multiplier + ema * (1 - multiplier), values[0]);
-}
-
-function calculateVolatility(closes: number[]) {
-  const returns = closes.slice(1).map((close, index) => close / closes[index] - 1);
-  const mean = average(returns);
-  return Math.sqrt(average(returns.map((value) => (value - mean) ** 2)));
-}
-
 function calculateVolumeConfirmation(dailyReturn: number, volumeRatio: number) {
   if (Math.abs(dailyReturn) < 0.002 || volumeRatio <= 1) {
     return 0;
@@ -459,14 +445,6 @@ function getVolumeDetail(dailyReturn: number, volumeRatio: number) {
   }
 
   return "Volume is close to its 20-day average and adds little directional weight.";
-}
-
-function average(values: number[]) {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function clamp(value: number, minimum: number, maximum: number) {
-  return Math.min(Math.max(value, minimum), maximum);
 }
 
 function formatSignedPercent(value: number) {

@@ -1,5 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  average,
+  buildDailyEnsemble,
+  calculateEma,
+  calculateRsi,
+  calculateVolatility,
+  clamp
+} from "../src/data/forecastModels.js";
 
 const FORECAST_FILE_NAME = "bitcoin-forecast-records.json";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -8,6 +16,9 @@ const CANDLES_URL = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
 interface Candle {
   date: string;
   timestamp: number;
+  open: number;
+  high: number;
+  low: number;
   close: number;
   volume: number;
 }
@@ -61,12 +72,15 @@ async function fetchDailyCandles(): Promise<Candle[]> {
 
 function readCandle(value: unknown): Candle | null {
   if (!Array.isArray(value) || value.length < 6) return null;
-  const [timestamp, , , , close, volume] = value;
-  if (![timestamp, close, volume].every((item) => typeof item === "number" && Number.isFinite(item))) return null;
+  const [timestamp, low, high, open, close, volume] = value;
+  if (![timestamp, low, high, open, close, volume].every((item) => typeof item === "number" && Number.isFinite(item))) return null;
 
   return {
     date: new Date(timestamp * 1000).toISOString().slice(0, 10),
     timestamp: timestamp * 1000,
+    open,
+    high,
+    low,
     close,
     volume
   };
@@ -92,9 +106,10 @@ function upsertForecasts(records: RecordItem[], candles: Candle[]) {
   const dailyReturn = currentClose / closes[closes.length - 2] - 1;
   const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
   const volumeConfirmation = calculateVolumeConfirmation(dailyReturn, volumeRatio);
+  const ensemble = buildDailyEnsemble(candles);
 
   const dailyExpectedReturn = clamp(
-    trend * 0.7 + macd * 0.55 - ((rsi - 50) / 100) * 0.012 + volumeConfirmation + calculateBias(records, "daily"),
+    ensemble.expectedReturn + calculateBias(records, "daily"),
     -0.12,
     0.12
   );
@@ -152,11 +167,6 @@ function calculateBias(records: RecordItem[], horizon: "daily" | "weekly") {
 
 function getHorizon(record: RecordItem) { return record.horizon ?? "daily"; }
 function toDate(timestamp: number) { return new Date(timestamp).toISOString().slice(0, 10); }
-function average(values: number[]) { return values.reduce((sum, value) => sum + value, 0) / values.length; }
-function clamp(value: number, min: number, max: number) { return Math.min(Math.max(value, min), max); }
-function calculateEma(values: number[], period: number) { const multiplier = 2 / (period + 1); return values.reduce((ema, value) => value * multiplier + ema * (1 - multiplier), values[0]); }
-function calculateRsi(closes: number[]) { const changes = closes.slice(1).map((close, index) => close - closes[index]); const gain = average(changes.map((change) => Math.max(change, 0))); const loss = average(changes.map((change) => Math.max(-change, 0))); return loss === 0 ? 100 : 100 - 100 / (1 + gain / loss); }
-function calculateVolatility(closes: number[]) { const returns = closes.slice(1).map((close, index) => close / closes[index] - 1); const mean = average(returns); return Math.sqrt(average(returns.map((value) => (value - mean) ** 2))); }
 function calculateVolumeConfirmation(dailyReturn: number, ratio: number) { return Math.abs(dailyReturn) < 0.002 || ratio <= 1 ? 0 : Math.sign(dailyReturn) * clamp((ratio - 1) * 0.012, 0, 0.024); }
 function volumeConfidence(dailyReturn: number, ratio: number) { if (Math.abs(dailyReturn) < 0.002) return 0; if (ratio >= 1.15) return clamp((ratio - 1) * 8, 0, 6); return ratio <= 0.8 ? -4 : 0; }
 
