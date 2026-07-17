@@ -58,6 +58,21 @@ export function BitcoinForecastDashboard() {
         <ForecastMetric label="Confidence" value={`${forecast.confidence}%`} detail="Model confidence, not certainty" />
       </section>
 
+      <section className="weekly-forecast panel">
+        <div>
+          <p className="panel__eyebrow">7-day forecast</p>
+          <h2>Expected BTC close in one week</h2>
+          <p>Uses longer trend weighting and a wider volatility range than the next-day estimate.</p>
+        </div>
+        <div className={`weekly-forecast__bias weekly-forecast__bias--${forecast.weeklyForecast.direction.toLowerCase()}`}>
+          <span>7D bias</span>
+          <strong>{forecast.weeklyForecast.direction}</strong>
+          <small>{forecast.weeklyForecast.expectedReturnPercent >= 0 ? "+" : ""}{forecast.weeklyForecast.expectedReturnPercent.toFixed(2)}%</small>
+        </div>
+        <div className="weekly-forecast__metric"><span>Projected close</span><strong>{currency.format(forecast.weeklyForecast.predictedClose)}</strong><small>{shortDate(forecast.weeklyForecast.targetDate)}</small></div>
+        <div className="weekly-forecast__metric"><span>Expected range</span><strong>{currency.format(forecast.weeklyForecast.lowerBound)} - {currency.format(forecast.weeklyForecast.upperBound)}</strong><small>{forecast.weeklyForecast.confidence}% confidence</small></div>
+      </section>
+
       <section className="forecast-layout">
         <article className="panel forecast-panel">
           <div className="panel__header">

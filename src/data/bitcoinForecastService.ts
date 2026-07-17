@@ -1,6 +1,7 @@
 import type {
   BitcoinCandle,
   BitcoinForecast,
+  ForecastHorizon,
   ForecastRecord,
   ForecastSignal
 } from "../types/forecast";
@@ -16,14 +17,15 @@ export async function fetchBitcoinForecast(): Promise<BitcoinForecast> {
   const candles = await fetchBitcoinDailyCandles();
   const records = reconcileForecastRecords(candles);
   const forecast = buildForecast(candles, records);
-  const nextRecords = upsertForecastRecord(records, forecast);
+  const nextRecords = upsertForecastRecords(records, forecast);
 
   saveForecastRecords(nextRecords);
 
   return {
     ...forecast,
     records: nextRecords,
-    accuracy: calculateAccuracy(nextRecords)
+    accuracy: calculateAccuracy(nextRecords, "daily"),
+    weeklyAccuracy: calculateAccuracy(nextRecords, "weekly")
   };
 }
 
@@ -89,7 +91,7 @@ function readCoinbaseCandle(value: unknown): BitcoinCandle | null {
 function buildForecast(
   candles: BitcoinCandle[],
   records: ForecastRecord[]
-): Omit<BitcoinForecast, "records" | "accuracy"> {
+): Omit<BitcoinForecast, "records" | "accuracy" | "weeklyAccuracy"> {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
   const currentClose = closes[closes.length - 1];
@@ -107,7 +109,7 @@ function buildForecast(
     latestDailyReturn,
     volumeRatio
   );
-  const correction = calculateBiasCorrection(records);
+  const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
     trendPercent * 0.7 +
       macdPercent * 0.55 -
@@ -135,6 +137,15 @@ function buildForecast(
     latestCandle.timestamp + DAY_IN_MS
   ).toISOString().slice(0, 10);
   const direction = expectedReturn > 0.003 ? "Bullish" : expectedReturn < -0.003 ? "Bearish" : "Neutral";
+  const weeklyForecast = buildWeeklyForecast({
+    latestCandle,
+    trendPercent,
+    macdPercent,
+    rsi14,
+    volumeConfirmation,
+    volatility,
+    records
+  });
 
   const signals: ForecastSignal[] = [
     {
@@ -181,6 +192,7 @@ function buildForecast(
     confidence,
     expectedReturnPercent: expectedReturn * 100,
     direction,
+    weeklyForecast,
     signals
   };
 }
@@ -194,11 +206,12 @@ function reconcileForecastRecords(candles: BitcoinCandle[]): ForecastRecord[] {
   }));
 }
 
-function upsertForecastRecord(
+function upsertForecastRecords(
   records: ForecastRecord[],
-  forecast: Omit<BitcoinForecast, "records" | "accuracy">
+  forecast: Omit<BitcoinForecast, "records" | "accuracy" | "weeklyAccuracy">
 ): ForecastRecord[] {
-  const record: ForecastRecord = {
+  const dailyRecord: ForecastRecord = {
+    horizon: "daily",
     targetDate: forecast.targetDate,
     createdAt: new Date().toISOString(),
     baseClose: forecast.currentClose,
@@ -207,7 +220,24 @@ function upsertForecastRecord(
     upperBound: forecast.upperBound,
     confidence: forecast.confidence
   };
-  const existingIndex = records.findIndex((item) => item.targetDate === record.targetDate);
+  const weeklyRecord: ForecastRecord = {
+    horizon: "weekly",
+    targetDate: forecast.weeklyForecast.targetDate,
+    createdAt: new Date().toISOString(),
+    baseClose: forecast.currentClose,
+    predictedClose: forecast.weeklyForecast.predictedClose,
+    lowerBound: forecast.weeklyForecast.lowerBound,
+    upperBound: forecast.weeklyForecast.upperBound,
+    confidence: forecast.weeklyForecast.confidence
+  };
+
+  return upsertForecastRecord(upsertForecastRecord(records, dailyRecord), weeklyRecord).slice(-180);
+}
+
+function upsertForecastRecord(records: ForecastRecord[], record: ForecastRecord) {
+  const existingIndex = records.findIndex(
+    (item) => item.targetDate === record.targetDate && getRecordHorizon(item) === record.horizon
+  );
   const nextRecords = [...records];
 
   if (existingIndex === -1) {
@@ -216,7 +246,7 @@ function upsertForecastRecord(
     nextRecords[existingIndex] = record;
   }
 
-  return nextRecords.slice(-90);
+  return nextRecords;
 }
 
 function readForecastRecords(): ForecastRecord[] {
@@ -246,8 +276,10 @@ function isForecastRecord(value: unknown): value is ForecastRecord {
   return typeof record.targetDate === "string" && typeof record.predictedClose === "number" && typeof record.baseClose === "number";
 }
 
-function calculateBiasCorrection(records: ForecastRecord[]) {
-  const settled = records.filter((record) => record.actualClose !== undefined).slice(-14);
+function calculateBiasCorrection(records: ForecastRecord[], horizon: "daily" | "weekly") {
+  const settled = records
+    .filter((record) => record.actualClose !== undefined && getRecordHorizon(record) === horizon)
+    .slice(-14);
   if (settled.length === 0) {
     return 0;
   }
@@ -258,8 +290,13 @@ function calculateBiasCorrection(records: ForecastRecord[]) {
   return clamp(averageRelativeError * 0.35, -0.025, 0.025);
 }
 
-function calculateAccuracy(records: ForecastRecord[]): BitcoinForecast["accuracy"] {
-  const settled = records.filter((record) => record.actualClose !== undefined);
+function calculateAccuracy(
+  records: ForecastRecord[],
+  horizon: "daily" | "weekly"
+): BitcoinForecast["accuracy"] {
+  const settled = records.filter(
+    (record) => record.actualClose !== undefined && getRecordHorizon(record) === horizon
+  );
   if (settled.length === 0) {
     return { settledCount: 0, meanAbsolutePercentError: null, directionalAccuracy: null };
   }
@@ -276,6 +313,58 @@ function calculateAccuracy(records: ForecastRecord[]): BitcoinForecast["accuracy
     meanAbsolutePercentError: average(absoluteErrors) * 100,
     directionalAccuracy: (correctDirections / settled.length) * 100
   };
+}
+
+function buildWeeklyForecast({
+  latestCandle,
+  trendPercent,
+  macdPercent,
+  rsi14,
+  volumeConfirmation,
+  volatility,
+  records
+}: {
+  latestCandle: BitcoinCandle;
+  trendPercent: number;
+  macdPercent: number;
+  rsi14: number;
+  volumeConfirmation: number;
+  volatility: number;
+  records: ForecastRecord[];
+}): ForecastHorizon {
+  const correction = calculateBiasCorrection(records, "weekly");
+  const expectedReturn = clamp(
+    trendPercent * 1.8 +
+      macdPercent * 1.35 -
+      ((rsi14 - 50) / 100) * 0.035 +
+      volumeConfirmation * 1.4 +
+      correction,
+    -0.3,
+    0.3
+  );
+  const predictedClose = latestCandle.close * (1 + expectedReturn);
+  const rangePercent = clamp(volatility * Math.sqrt(7) * 1.7, 0.07, 0.28);
+  const confidence = Math.round(
+    clamp(66 - volatility * 520 - Math.abs(rsi14 - 50) * 0.36, 32, 70)
+  );
+
+  return {
+    targetDate: new Date(latestCandle.timestamp + 7 * DAY_IN_MS)
+      .toISOString()
+      .slice(0, 10),
+    predictedClose,
+    lowerBound: predictedClose * (1 - rangePercent),
+    upperBound: predictedClose * (1 + rangePercent),
+    confidence,
+    expectedReturnPercent: expectedReturn * 100,
+    direction:
+      expectedReturn > 0.012 ? "Bullish" : expectedReturn < -0.012 ? "Bearish" : "Neutral"
+  };
+}
+
+function getRecordHorizon(record: ForecastRecord) {
+  // Forecast records saved before weekly support are daily forecasts.
+  return record.horizon ?? "daily";
 }
 
 function calculateRsi(closes: number[]) {
