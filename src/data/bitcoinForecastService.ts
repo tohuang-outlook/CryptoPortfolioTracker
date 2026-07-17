@@ -35,9 +35,8 @@ async function fetchBitcoinDailyCandles(): Promise<BitcoinCandle[]> {
   url.searchParams.set("end", end.toISOString());
   url.searchParams.set("granularity", "86400");
 
-  const response = await fetch(url, {
-    headers: { "Cache-Control": "no-cache" }
-  });
+  // Keep this request simple so Coinbase's public CORS policy accepts it in Electron.
+  const response = await fetch(url);
 
   if (!response.ok) {
     throw new Error("Unable to fetch Bitcoin daily candles");
@@ -92,6 +91,7 @@ function buildForecast(
   records: ForecastRecord[]
 ): Omit<BitcoinForecast, "records" | "accuracy"> {
   const closes = candles.map((candle) => candle.close);
+  const volumes = candles.map((candle) => candle.volume);
   const currentClose = closes[closes.length - 1];
   const sma7 = average(closes.slice(-7));
   const sma30 = average(closes.slice(-30));
@@ -101,16 +101,33 @@ function buildForecast(
   const macdPercent = (ema12 - ema26) / currentClose;
   const trendPercent = sma7 / sma30 - 1;
   const volatility = calculateVolatility(closes.slice(-15));
+  const latestDailyReturn = currentClose / closes[closes.length - 2] - 1;
+  const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
+  const volumeConfirmation = calculateVolumeConfirmation(
+    latestDailyReturn,
+    volumeRatio
+  );
   const correction = calculateBiasCorrection(records);
   const expectedReturn = clamp(
-    trendPercent * 0.7 + macdPercent * 0.55 - ((rsi14 - 50) / 100) * 0.012 + correction,
+    trendPercent * 0.7 +
+      macdPercent * 0.55 -
+      ((rsi14 - 50) / 100) * 0.012 +
+      volumeConfirmation +
+      correction,
     -0.12,
     0.12
   );
   const predictedClose = currentClose * (1 + expectedReturn);
   const rangePercent = clamp(volatility * 1.6, 0.025, 0.12);
   const confidence = Math.round(
-    clamp(72 - volatility * 450 - Math.abs(rsi14 - 50) * 0.28, 38, 78)
+    clamp(
+      72 -
+        volatility * 450 -
+        Math.abs(rsi14 - 50) * 0.28 +
+        calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio),
+      38,
+      78
+    )
   );
   const latestCandle = candles[candles.length - 1];
   const asOfDate = latestCandle.date;
@@ -137,6 +154,12 @@ function buildForecast(
       value: formatSignedPercent(macdPercent),
       direction: macdPercent > 0 ? "positive" : "negative",
       detail: macdPercent > 0 ? "Momentum remains above its longer baseline." : "Momentum remains below its longer baseline."
+    },
+    {
+      label: "Volume confirmation",
+      value: `${volumeRatio.toFixed(2)}x 20D avg`,
+      direction: getVolumeDirection(latestDailyReturn, volumeRatio),
+      detail: getVolumeDetail(latestDailyReturn, volumeRatio)
     },
     {
       label: "Model correction",
@@ -279,6 +302,62 @@ function calculateVolatility(closes: number[]) {
   const returns = closes.slice(1).map((close, index) => close / closes[index] - 1);
   const mean = average(returns);
   return Math.sqrt(average(returns.map((value) => (value - mean) ** 2)));
+}
+
+function calculateVolumeConfirmation(dailyReturn: number, volumeRatio: number) {
+  if (Math.abs(dailyReturn) < 0.002 || volumeRatio <= 1) {
+    return 0;
+  }
+
+  return Math.sign(dailyReturn) * clamp((volumeRatio - 1) * 0.012, 0, 0.024);
+}
+
+function calculateVolumeConfidenceAdjustment(
+  dailyReturn: number,
+  volumeRatio: number
+) {
+  if (Math.abs(dailyReturn) < 0.002) {
+    return 0;
+  }
+
+  if (volumeRatio >= 1.15) {
+    return clamp((volumeRatio - 1) * 8, 0, 6);
+  }
+
+  if (volumeRatio <= 0.8) {
+    return -4;
+  }
+
+  return 0;
+}
+
+function getVolumeDirection(
+  dailyReturn: number,
+  volumeRatio: number
+): ForecastSignal["direction"] {
+  if (Math.abs(dailyReturn) < 0.002 || volumeRatio < 1.05) {
+    return "neutral";
+  }
+
+  return dailyReturn > 0 ? "positive" : "negative";
+}
+
+function getVolumeDetail(dailyReturn: number, volumeRatio: number) {
+  if (Math.abs(dailyReturn) < 0.002) {
+    return "Price was mostly unchanged, so volume is not adding directional weight.";
+  }
+
+  if (volumeRatio >= 1.15) {
+    return dailyReturn > 0
+      ? "Above-average volume confirms the latest upward move."
+      : "Above-average volume confirms the latest downward move.";
+  }
+
+  if (volumeRatio <= 0.8) {
+    return "Below-average volume lowers confidence in the latest price move.";
+  }
+
+  return "Volume is close to its 20-day average and adds little directional weight.";
 }
 
 function average(values: number[]) {
