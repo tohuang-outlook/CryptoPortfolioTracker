@@ -68,3 +68,5 @@ After opening the packaged Mac app once, it registers a macOS background task th
 ## Forecast Ensemble And Backtesting
 
 The daily forecast combines technical signals, trend-following, and mean-reversion models. Each model is tested with a rolling 60-day walk-forward backtest: every historical prediction uses only candles that were available on that date. The app gives models with lower recent error and stronger directional accuracy more ensemble weight, then displays the resulting leaderboard in the Bitcoin Forecast workspace.
+
+The ensemble also classifies the current market as an uptrend, downtrend, range-bound, or high-volatility state, and uses that state to adapt the candidate-model weights. After at least eight settled forecasts, the expected range is calibrated against its recent coverage: ranges widen when actual closes are missing the target coverage and narrow when they are overly conservative.

@@ -38,6 +38,20 @@ export interface ForecastSignal {
 }
 
 export type ForecastModelId = "technical" | "trend" | "meanReversion";
+export type MarketRegimeId = "uptrend" | "downtrend" | "range" | "volatile";
+
+export interface MarketRegime {
+  id: MarketRegimeId;
+  label: string;
+  detail: string;
+}
+
+export interface RangeCalibration {
+  settledCount: number;
+  observedCoverage: number | null;
+  targetCoverage: number;
+  multiplier: number;
+}
 
 export interface ForecastModelPerformance {
   id: ForecastModelId;
@@ -61,6 +75,8 @@ export interface BitcoinForecast {
   weeklyForecast: ForecastHorizon;
   signals: ForecastSignal[];
   modelLeaderboard: ForecastModelPerformance[];
+  marketRegime: MarketRegime;
+  rangeCalibration: RangeCalibration;
   records: ForecastRecord[];
   accuracy: {
     settledCount: number;

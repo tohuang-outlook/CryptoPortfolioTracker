@@ -8,6 +8,7 @@ import type {
 import {
   average,
   buildDailyEnsemble,
+  calculateRangeCalibration,
   calculateEma,
   calculateRsi,
   calculateVolatility,
@@ -118,6 +119,7 @@ function buildForecast(
     volumeRatio
   );
   const ensemble = buildDailyEnsemble(candles);
+  const rangeCalibration = calculateRangeCalibration(records, "daily");
   const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
     ensemble.expectedReturn + correction,
@@ -125,13 +127,17 @@ function buildForecast(
     0.12
   );
   const predictedClose = currentClose * (1 + expectedReturn);
-  const rangePercent = clamp(volatility * 1.6, 0.025, 0.12);
+  const rangePercent = clamp(volatility * 1.6 * rangeCalibration.multiplier, 0.025, 0.16);
+  const calibrationPenalty = rangeCalibration.observedCoverage === null
+    ? 0
+    : Math.abs(rangeCalibration.observedCoverage - rangeCalibration.targetCoverage) * 30;
   const confidence = Math.round(
     clamp(
       72 -
         volatility * 450 -
         Math.abs(rsi14 - 50) * 0.28 +
-        calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio),
+        calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio) -
+        calibrationPenalty,
       38,
       78
     )
@@ -178,6 +184,12 @@ function buildForecast(
       detail: getVolumeDetail(latestDailyReturn, volumeRatio)
     },
     {
+      label: "Market regime",
+      value: ensemble.marketRegime.label,
+      direction: ensemble.marketRegime.id === "uptrend" ? "positive" : ensemble.marketRegime.id === "downtrend" ? "negative" : "neutral",
+      detail: ensemble.marketRegime.detail
+    },
+    {
       label: "Ensemble model",
       value: `${ensemble.leaderboard.length} models`,
       direction: "neutral",
@@ -205,7 +217,9 @@ function buildForecast(
     direction,
     weeklyForecast,
     signals,
-    modelLeaderboard: ensemble.leaderboard
+    modelLeaderboard: ensemble.leaderboard,
+    marketRegime: ensemble.marketRegime,
+    rangeCalibration
   };
 }
 
@@ -357,6 +371,7 @@ function buildWeeklyForecast({
   records: ForecastRecord[];
 }): ForecastHorizon {
   const correction = calculateBiasCorrection(records, "weekly");
+  const rangeCalibration = calculateRangeCalibration(records, "weekly");
   const expectedReturn = clamp(
     trendPercent * 1.8 +
       macdPercent * 1.35 -
@@ -367,9 +382,14 @@ function buildWeeklyForecast({
     0.3
   );
   const predictedClose = latestCandle.close * (1 + expectedReturn);
-  const rangePercent = clamp(volatility * Math.sqrt(7) * 1.7, 0.07, 0.28);
+  const rangePercent = clamp(volatility * Math.sqrt(7) * 1.7 * rangeCalibration.multiplier, 0.07, 0.32);
   const confidence = Math.round(
-    clamp(66 - volatility * 520 - Math.abs(rsi14 - 50) * 0.36, 32, 70)
+    clamp(
+      66 - volatility * 520 - Math.abs(rsi14 - 50) * 0.36 -
+        (rangeCalibration.observedCoverage === null ? 0 : Math.abs(rangeCalibration.observedCoverage - rangeCalibration.targetCoverage) * 28),
+      32,
+      70
+    )
   );
 
   return {

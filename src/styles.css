@@ -735,6 +735,11 @@ button:hover {
 .weekly-forecast__bias strong { font-size: 1.3rem; }.weekly-forecast__metric strong { font-size: 1.1rem; letter-spacing: -.03em; }
 .weekly-forecast__bias--bullish strong { color: #15725f; }.weekly-forecast__bias--bearish strong { color: #b2573f; }.weekly-forecast__bias--neutral strong { color: #557176; }
 
+.forecast-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.forecast-status-card h2 { margin: 4px 0 10px; font-size: 1.7rem; }.forecast-status-card p { margin: 0; color: #5a7674; line-height: 1.55; }
+.forecast-status-card__tag { display: inline-flex; margin-top: 18px; padding: 7px 10px; border-radius: 99px; background: #eef7f6; color: #386363; font-size: .8rem; font-weight: 700; }
+.forecast-status-card__tag--uptrend { background: #e4f4ea; color: #15725f; }.forecast-status-card__tag--downtrend { background: #fbece7; color: #b2573f; }.forecast-status-card__tag--volatile { background: #fbf1dc; color: #8b641a; }
+
 .forecast-metric {
   min-height: 142px;
   padding: 20px;
@@ -793,6 +798,8 @@ button:hover {
   .forecast-summary-grid { grid-template-columns: 1fr; }
 
   .weekly-forecast { grid-template-columns: 1fr; }
+
+  .forecast-status-grid { grid-template-columns: 1fr; }
 
   .model-leaderboard { overflow-x: auto; }
   .model-leaderboard__header, .model-leaderboard__row { min-width: 650px; }

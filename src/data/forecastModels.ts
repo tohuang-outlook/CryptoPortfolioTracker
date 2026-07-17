@@ -1,4 +1,11 @@
-import type { BitcoinCandle, ForecastModelId, ForecastModelPerformance } from "../types/forecast.js";
+import type {
+  BitcoinCandle,
+  ForecastModelId,
+  ForecastModelPerformance,
+  MarketRegime,
+  MarketRegimeId,
+  RangeCalibration
+} from "../types/forecast.js";
 
 const MINIMUM_HISTORY = 31;
 const BACKTEST_WINDOW = 60;
@@ -58,20 +65,21 @@ export function buildDailyEnsemble(candles: BitcoinCandle[]) {
     throw new Error("Not enough Bitcoin history to build the forecast ensemble");
   }
 
-  const leaderboard = backtestModels(candles);
+  const marketRegime = detectMarketRegime(candles);
+  const leaderboard = backtestModels(candles, marketRegime.id);
   const currentReturns = models.map((model) => ({ id: model.id, value: model.predictReturn(candles) }));
   const expectedReturn = currentReturns.reduce(
     (sum, prediction) => sum + prediction.value * leaderboard.find((model) => model.id === prediction.id)!.weight,
     0
   );
 
-  return { expectedReturn: clamp(expectedReturn, -0.12, 0.12), leaderboard };
+  return { expectedReturn: clamp(expectedReturn, -0.12, 0.12), leaderboard, marketRegime };
 }
 
-function backtestModels(candles: BitcoinCandle[]): ForecastModelPerformance[] {
+function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId): ForecastModelPerformance[] {
   const startIndex = Math.max(MINIMUM_HISTORY - 1, candles.length - BACKTEST_WINDOW - 1);
   const samples = models.map((model) => {
-    const outcomes: Array<{ absoluteError: number; correctDirection: boolean }> = [];
+    const outcomes: Array<{ absoluteError: number; correctDirection: boolean; regime: MarketRegimeId }> = [];
 
     for (let index = startIndex; index < candles.length - 1; index += 1) {
       const history = candles.slice(0, index + 1);
@@ -80,18 +88,25 @@ function backtestModels(candles: BitcoinCandle[]): ForecastModelPerformance[] {
       const actualClose = candles[index + 1].close;
       outcomes.push({
         absoluteError: Math.abs(actualClose - predictedClose) / actualClose,
-        correctDirection: Math.sign(predictedClose - baseClose) === Math.sign(actualClose - baseClose)
+        correctDirection: Math.sign(predictedClose - baseClose) === Math.sign(actualClose - baseClose),
+        regime: detectMarketRegime(history).id
       });
     }
 
+    const regimeOutcomes = outcomes.filter((outcome) => outcome.regime === activeRegime);
+    const evaluatedOutcomes = regimeOutcomes.length >= 12 ? regimeOutcomes : outcomes;
+
     return {
       ...model,
-      meanAbsolutePercentError: average(outcomes.map((outcome) => outcome.absoluteError)) * 100,
-      directionalAccuracy: (outcomes.filter((outcome) => outcome.correctDirection).length / outcomes.length) * 100,
-      evaluatedDays: outcomes.length
+      meanAbsolutePercentError: average(evaluatedOutcomes.map((outcome) => outcome.absoluteError)) * 100,
+      directionalAccuracy: (evaluatedOutcomes.filter((outcome) => outcome.correctDirection).length / evaluatedOutcomes.length) * 100,
+      evaluatedDays: evaluatedOutcomes.length
     };
   });
-  const scores = samples.map((sample) => 1 / Math.max(sample.meanAbsolutePercentError, 0.05) * (0.8 + sample.directionalAccuracy / 250));
+  const regimeMultipliers = getRegimeMultipliers(activeRegime);
+  const scores = samples.map((sample) =>
+    regimeMultipliers[sample.id] / Math.max(sample.meanAbsolutePercentError, 0.05) * (0.8 + sample.directionalAccuracy / 250)
+  );
   const totalScore = average(scores) * scores.length;
 
   return samples
@@ -104,6 +119,62 @@ function backtestModels(candles: BitcoinCandle[]): ForecastModelPerformance[] {
       evaluatedDays: sample.evaluatedDays
     }))
     .sort((left, right) => right.weight - left.weight);
+}
+
+export function detectMarketRegime(candles: BitcoinCandle[]): MarketRegime {
+  const closes = candles.map((candle) => candle.close);
+  const volatility15 = calculateVolatility(closes.slice(-15));
+  const volatility60 = closes.length >= 61 ? calculateVolatility(closes.slice(-60)) : volatility15;
+  const sma7 = average(closes.slice(-7));
+  const sma30 = average(closes.slice(-30));
+  const currentClose = closes[closes.length - 1];
+  const trend = sma7 / sma30 - 1;
+
+  if (volatility15 > Math.max(volatility60 * 1.45, 0.035)) {
+    return { id: "volatile", label: "High volatility", detail: "Recent daily swings are materially above the longer-term baseline." };
+  }
+  if (trend > 0.012 && currentClose > sma30) {
+    return { id: "uptrend", label: "Uptrend", detail: "Short-term price and trend are holding above the 30-day baseline." };
+  }
+  if (trend < -0.012 && currentClose < sma30) {
+    return { id: "downtrend", label: "Downtrend", detail: "Short-term price and trend are holding below the 30-day baseline." };
+  }
+  return { id: "range", label: "Range-bound", detail: "Price is moving near its recent average without a decisive trend." };
+}
+
+export function calculateRangeCalibration(
+  records: Array<{ horizon?: "daily" | "weekly"; lowerBound: number; upperBound: number; actualClose?: number }>,
+  horizon: "daily" | "weekly"
+): RangeCalibration {
+  const settled = records
+    .filter((record) => (record.horizon ?? "daily") === horizon && record.actualClose !== undefined)
+    .slice(-30);
+  const targetCoverage = 0.68;
+
+  if (settled.length < 8) {
+    return { settledCount: settled.length, observedCoverage: null, targetCoverage, multiplier: 1 };
+  }
+
+  const observedCoverage = settled.filter((record) =>
+    record.actualClose! >= record.lowerBound && record.actualClose! <= record.upperBound
+  ).length / settled.length;
+
+  return {
+    settledCount: settled.length,
+    observedCoverage,
+    targetCoverage,
+    multiplier: clamp(1 + (targetCoverage - observedCoverage) * 1.5, 0.85, 1.45)
+  };
+}
+
+function getRegimeMultipliers(regime: MarketRegimeId): Record<ForecastModelId, number> {
+  if (regime === "uptrend" || regime === "downtrend") {
+    return { technical: 1.15, trend: 1.45, meanReversion: 0.72 };
+  }
+  if (regime === "volatile") {
+    return { technical: 1.35, trend: 0.95, meanReversion: 0.75 };
+  }
+  return { technical: 1, trend: 0.72, meanReversion: 1.45 };
 }
 
 export function calculateVolatility(closes: number[]) {

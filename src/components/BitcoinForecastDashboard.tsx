@@ -75,6 +75,26 @@ export function BitcoinForecastDashboard() {
         <div className="weekly-forecast__metric"><span>{t("Expected range")}</span><strong>{currency.format(forecast.weeklyForecast.lowerBound)} - {currency.format(forecast.weeklyForecast.upperBound)}</strong><small>{forecast.weeklyForecast.confidence}% {t("confidence")}</small></div>
       </section>
 
+      <section className="forecast-status-grid">
+        <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Market regime")}</p>
+          <h2>{t(forecast.marketRegime.label)}</h2>
+          <p>{t(forecast.marketRegime.detail)}</p>
+          <span className={`forecast-status-card__tag forecast-status-card__tag--${forecast.marketRegime.id}`}>{t("Weights are tuned for this market state")}</span>
+        </article>
+        <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Range calibration")}</p>
+          <h2>{forecast.rangeCalibration.observedCoverage === null ? t("Learning") : `${(forecast.rangeCalibration.observedCoverage * 100).toFixed(0)}% ${t("coverage")}`}</h2>
+          <p>{forecast.rangeCalibration.observedCoverage === null
+            ? t("Calibration begins after 8 settled forecasts.")
+            : t("Target is {target}; the next range is adjusted by {adjustment}.", {
+              target: `${(forecast.rangeCalibration.targetCoverage * 100).toFixed(0)}%`,
+              adjustment: `${(forecast.rangeCalibration.multiplier * 100).toFixed(0)}%`
+            })}</p>
+          <span className="forecast-status-card__tag">{t("{count} settled forecasts", { count: forecast.rangeCalibration.settledCount })}</span>
+        </article>
+      </section>
+
       <section className="forecast-layout">
         <article className="panel forecast-panel">
           <div className="panel__header">

@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   average,
   buildDailyEnsemble,
+  calculateRangeCalibration,
   calculateEma,
   calculateRsi,
   calculateVolatility,
@@ -107,6 +108,8 @@ function upsertForecasts(records: RecordItem[], candles: Candle[]) {
   const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
   const volumeConfirmation = calculateVolumeConfirmation(dailyReturn, volumeRatio);
   const ensemble = buildDailyEnsemble(candles);
+  const dailyCalibration = calculateRangeCalibration(records, "daily");
+  const weeklyCalibration = calculateRangeCalibration(records, "weekly");
 
   const dailyExpectedReturn = clamp(
     ensemble.expectedReturn + calculateBias(records, "daily"),
@@ -124,16 +127,26 @@ function upsertForecasts(records: RecordItem[], candles: Candle[]) {
     targetDate: toDate(latest.timestamp + DAY_IN_MS),
     baseClose: currentClose,
     expectedReturn: dailyExpectedReturn,
-    rangePercent: clamp(volatility * 1.6, 0.025, 0.12),
-    confidence: Math.round(clamp(72 - volatility * 450 - Math.abs(rsi - 50) * 0.28 + volumeConfidence(dailyReturn, volumeRatio), 38, 78))
+    rangePercent: clamp(volatility * 1.6 * dailyCalibration.multiplier, 0.025, 0.16),
+    confidence: Math.round(clamp(
+      72 - volatility * 450 - Math.abs(rsi - 50) * 0.28 + volumeConfidence(dailyReturn, volumeRatio) -
+        (dailyCalibration.observedCoverage === null ? 0 : Math.abs(dailyCalibration.observedCoverage - dailyCalibration.targetCoverage) * 30),
+      38,
+      78
+    ))
   });
   const weeklyPrediction = makeRecord({
     horizon: "weekly",
     targetDate: toDate(latest.timestamp + 7 * DAY_IN_MS),
     baseClose: currentClose,
     expectedReturn: weeklyExpectedReturn,
-    rangePercent: clamp(volatility * Math.sqrt(7) * 1.7, 0.07, 0.28),
-    confidence: Math.round(clamp(66 - volatility * 520 - Math.abs(rsi - 50) * 0.36, 32, 70))
+    rangePercent: clamp(volatility * Math.sqrt(7) * 1.7 * weeklyCalibration.multiplier, 0.07, 0.32),
+    confidence: Math.round(clamp(
+      66 - volatility * 520 - Math.abs(rsi - 50) * 0.36 -
+        (weeklyCalibration.observedCoverage === null ? 0 : Math.abs(weeklyCalibration.observedCoverage - weeklyCalibration.targetCoverage) * 28),
+      32,
+      70
+    ))
   });
 
   return upsertRecord(upsertRecord(records, dailyPrediction), weeklyPrediction).slice(-180);

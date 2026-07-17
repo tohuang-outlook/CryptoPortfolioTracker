@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDailyEnsemble } from "./forecastModels";
+import { buildDailyEnsemble, calculateRangeCalibration, detectMarketRegime } from "./forecastModels";
 import type { BitcoinCandle } from "../types/forecast";
 
 function makeCandles(count: number): BitcoinCandle[] {
@@ -33,5 +33,27 @@ describe("daily forecast ensemble", () => {
 
   it("needs enough history for a walk-forward forecast", () => {
     expect(() => buildDailyEnsemble(makeCandles(30))).toThrow("Not enough Bitcoin history");
+  });
+
+  it("identifies a rising market state and prioritizes the trend model", () => {
+    const result = buildDailyEnsemble(makeCandles(90));
+
+    expect(detectMarketRegime(makeCandles(90)).id).toBe("uptrend");
+    expect(result.leaderboard.find((model) => model.id === "trend")!.weight).toBeGreaterThan(0);
+  });
+
+  it("widens future ranges when settled forecasts miss the target coverage", () => {
+    const calibration = calculateRangeCalibration(
+      Array.from({ length: 10 }, () => ({
+        horizon: "daily" as const,
+        lowerBound: 99,
+        upperBound: 101,
+        actualClose: 105
+      })),
+      "daily"
+    );
+
+    expect(calibration.observedCoverage).toBe(0);
+    expect(calibration.multiplier).toBeGreaterThan(1);
   });
 });
