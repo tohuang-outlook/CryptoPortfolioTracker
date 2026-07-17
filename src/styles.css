@@ -46,6 +46,30 @@ textarea {
   gap: 24px;
 }
 
+.app-navigation {
+  display: flex;
+  gap: 8px;
+  align-self: start;
+  padding: 7px;
+  width: fit-content;
+  border: 1px solid rgba(22, 49, 58, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.app-navigation__item {
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: transparent;
+  color: #557176;
+  font-size: 0.88rem;
+}
+
+.app-navigation__item--active {
+  background: #16313a;
+  color: #fff;
+}
+
 .hero-card {
   padding: clamp(28px, 4vw, 40px);
   border: 1px solid rgba(22, 49, 58, 0.08);
@@ -643,6 +667,87 @@ button:hover {
   background: linear-gradient(135deg, #b2573f 0%, #c26b49 100%);
 }
 
+.forecast-dashboard {
+  display: grid;
+  gap: 24px;
+}
+
+.forecast-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+}
+
+.forecast-hero h2 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  letter-spacing: -0.05em;
+}
+
+.forecast-hero__copy {
+  max-width: 650px;
+  margin: 14px 0 0;
+  color: #4e666b;
+}
+
+.forecast-bias {
+  min-width: 160px;
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+  border-radius: 18px;
+  background: #eff7f5;
+}
+
+.forecast-bias span,
+.forecast-bias small {
+  color: #557176;
+}
+
+.forecast-bias strong {
+  font-size: 1.5rem;
+}
+
+.forecast-bias--bullish strong { color: #15725f; }
+.forecast-bias--bearish strong { color: #b2573f; }
+.forecast-bias--neutral strong { color: #557176; }
+
+.forecast-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.forecast-metric {
+  min-height: 142px;
+  padding: 20px;
+  border: 1px solid rgba(22, 49, 58, 0.08);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.8);
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+}
+
+.forecast-metric p,
+.forecast-metric span { margin: 0; color: #5a7674; font-size: 0.84rem; }
+.forecast-metric p { font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+.forecast-metric strong { font-size: clamp(1.3rem, 2.2vw, 1.75rem); letter-spacing: -0.04em; }
+
+.forecast-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr); gap: 24px; }
+.forecast-panel { min-width: 0; }
+.signal-list { display: grid; }
+.signal-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 15px 0; border-bottom: 1px solid rgba(22, 49, 58, 0.08); }
+.signal-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.signal-row__dot { width: 10px; height: 10px; margin-top: 5px; border-radius: 99px; }
+.signal-row__dot--positive { background: #2a8b79; }.signal-row__dot--negative { background: #c26b49; }.signal-row__dot--neutral { background: #a4b9b6; }
+.signal-row strong, .signal-row p { margin: 0; }.signal-row p { margin-top: 4px; color: #5a7674; font-size: .9rem; }.signal-row__value { white-space: nowrap; }.signal-row__value--positive { color: #15725f; }.signal-row__value--negative { color: #b2573f; }.signal-row__value--neutral { color: #5a7674; }
+.forecast-empty { margin: 18px 0 0; color: #5a7674; line-height: 1.6; }
+.accuracy-stats { display: grid; gap: 15px; margin-top: 20px; }.accuracy-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }.accuracy-stats span { color: #5a7674; }.accuracy-stats strong { font-size: 1.4rem; }
+.forecast-panel--wide { min-height: 340px; }.forecast-chart { width: 100%; height: 230px; margin-top: 10px; }.forecast-loading { min-height: 260px; display: grid; place-items: center; color: #557176; text-align: center; }.forecast-loading--error { color: #b2573f; }
+.forecast-disclaimer { padding: 0 10px; color: #5a7674; font-size: .84rem; text-align: center; }
+
 @media (max-width: 720px) {
   .app-shell {
     padding: 16px;
@@ -660,6 +765,10 @@ button:hover {
   .summary-grid {
     grid-template-columns: 1fr;
   }
+
+  .forecast-hero, .forecast-layout { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+
+  .forecast-summary-grid { grid-template-columns: 1fr; }
 
   .content-grid {
     grid-template-columns: 1fr;
