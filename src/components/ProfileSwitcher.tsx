@@ -4,6 +4,7 @@ import {
   PROFILE_COLOR_OPTIONS
 } from "../constants/profileColors";
 import type { Profile } from "../types/portfolio";
+import { useTranslation } from "../i18n";
 
 type MutationResult =
   | { success: true }
@@ -27,6 +28,7 @@ export function ProfileSwitcher({
   onRenameProfile: (input: { id: string; name: string }) => MutationResult;
   onDeleteProfile: (profileId: string) => MutationResult;
 }) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
@@ -154,7 +156,7 @@ export function ProfileSwitcher({
         />
         <span className="profile-switcher__copy">
           <span className="profile-switcher__name">{activeProfile.name}</span>
-          <span className="profile-switcher__meta">Active portfolio</span>
+          <span className="profile-switcher__meta">{t("Active portfolio")}</span>
         </span>
       </button>
 
@@ -172,9 +174,9 @@ export function ProfileSwitcher({
                   <div key={profile.id} className={optionClassName}>
                     <div className="profile-switcher__row-editor">
                       <label className="profile-switcher__label">
-                        <span className="sr-only">Rename profile name</span>
+                        <span className="sr-only">{t("Rename profile name")}</span>
                         <input
-                          aria-label="Rename profile name"
+                          aria-label={t("Rename profile name")}
                           value={editingName}
                           onChange={(event) => setEditingName(event.target.value)}
                         />
@@ -184,14 +186,14 @@ export function ProfileSwitcher({
                           type="button"
                           onClick={() => handleRenameSave(profile.id)}
                         >
-                          Save Profile Rename
+                          {t("Save Profile Rename")}
                         </button>
                         <button
                           type="button"
                           className="button-secondary"
                           onClick={handleRenameCancel}
                         >
-                          Cancel
+                          {t("Cancel")}
                         </button>
                       </div>
                     </div>
@@ -203,21 +205,21 @@ export function ProfileSwitcher({
                 return (
                   <div key={profile.id} className={optionClassName}>
                     <div className="profile-switcher__row-delete">
-                      <p>Delete this profile and all of its transactions?</p>
+                      <p>{t("Delete this profile and all of its transactions?")}</p>
                       <div className="profile-switcher__row-actions">
                         <button
                           type="button"
                           className="button-danger"
                           onClick={() => handleDeleteConfirm(profile.id)}
                         >
-                          Confirm Delete {profile.name}
+                          {t("Confirm Delete")} {profile.name}
                         </button>
                         <button
                           type="button"
                           className="button-secondary"
                           onClick={handleDeleteCancel}
                         >
-                          Cancel
+                          {t("Cancel")}
                         </button>
                       </div>
                     </div>
@@ -244,19 +246,19 @@ export function ProfileSwitcher({
                       <button
                         type="button"
                         className="button-secondary"
-                        aria-label={`Rename ${profile.name}`}
+                        aria-label={`${t("Rename")} ${profile.name}`}
                         onClick={() => startRename(profile)}
                       >
-                        Rename
+                        {t("Rename")}
                       </button>
                       {profiles.length > 1 ? (
                         <button
                           type="button"
                           className="button-secondary button-danger-soft"
-                          aria-label={`Delete ${profile.name}`}
+                          aria-label={`${t("Delete")} ${profile.name}`}
                           onClick={() => startDelete(profile.id)}
                         >
-                          Delete
+                          {t("Delete")}
                         </button>
                       ) : null}
                     </div>
@@ -269,7 +271,7 @@ export function ProfileSwitcher({
           {isCreating ? (
             <div className="profile-switcher__create">
               <label className="profile-switcher__label">
-                <span>Profile Name</span>
+                <span>{t("Profile Name")}</span>
                 <input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
@@ -298,7 +300,7 @@ export function ProfileSwitcher({
 
               <div className="profile-switcher__actions">
                 <button type="button" onClick={handleCreate}>
-                  Create Profile
+                  {t("Create Profile")}
                 </button>
                 <button
                   type="button"
@@ -308,7 +310,7 @@ export function ProfileSwitcher({
                     setError(null);
                   }}
                 >
-                  Cancel
+                  {t("Cancel")}
                 </button>
               </div>
             </div>
@@ -325,7 +327,7 @@ export function ProfileSwitcher({
                   setError(null);
                 }}
               >
-                Create New Profile
+                {t("Create New Profile")}
               </button>
             </>
           )}

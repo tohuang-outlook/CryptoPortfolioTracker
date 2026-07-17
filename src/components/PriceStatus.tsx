@@ -5,6 +5,7 @@ export function PriceStatus({
   status: "idle" | "loading" | "ready" | "error";
   lastUpdated: string | null;
 }) {
+  const { language, t } = useTranslation();
   if (status === "loading") {
     return (
       <div
@@ -13,9 +14,9 @@ export function PriceStatus({
         aria-live="polite"
         aria-atomic="true"
       >
-        <p className="price-status__headline">Loading live prices...</p>
+        <p className="price-status__headline">{t("Loading live prices...")}</p>
         <p className="price-status__detail">
-          Checking the latest market prices now.
+          {t("Checking the latest market prices now.")}
         </p>
       </div>
     );
@@ -30,12 +31,12 @@ export function PriceStatus({
         aria-atomic="true"
       >
         <p className="price-status__headline">
-          Live prices are temporarily unavailable.
+          {t("Live prices are temporarily unavailable.")}
         </p>
         <p className="price-status__detail">
           {lastUpdated
-            ? `Showing the last successful update from ${formatLastUpdated(lastUpdated)}.`
-            : "We will try again automatically in about a minute."}
+            ? `${t("Showing the last successful update from")} ${formatLastUpdated(lastUpdated, language)}.`
+            : t("We will try again automatically in about a minute.")}
         </p>
       </div>
     );
@@ -49,9 +50,9 @@ export function PriceStatus({
         aria-live="polite"
         aria-atomic="true"
       >
-        <p className="price-status__headline">Live prices updated.</p>
+        <p className="price-status__headline">{t("Live prices updated.")}</p>
         <p className="price-status__detail">
-          Updated {formatLastUpdated(lastUpdated)}.
+          {t("Updated")} {formatLastUpdated(lastUpdated, language)}.
         </p>
       </div>
     );
@@ -64,19 +65,19 @@ export function PriceStatus({
       aria-live="polite"
       aria-atomic="true"
     >
-      <p className="price-status__headline">Waiting for live prices.</p>
+      <p className="price-status__headline">{t("Waiting for live prices.")}</p>
       <p className="price-status__detail">
-        Prices will appear here after the first refresh completes.
+        {t("Prices will appear here after the first refresh completes.")}
       </p>
     </div>
   );
 }
 
-function formatLastUpdated(value: string): string {
+function formatLastUpdated(value: string, language: string): string {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "recently";
+    return language === "zh-TW" ? "剛剛" : "recently";
   }
 
   const now = new Date();
@@ -85,19 +86,21 @@ function formatLastUpdated(value: string): string {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate();
 
-  const timeLabel = new Intl.DateTimeFormat(undefined, {
+  const locale = language === "zh-TW" ? "zh-TW" : undefined;
+  const timeLabel = new Intl.DateTimeFormat(locale, {
     hour: "numeric",
     minute: "2-digit"
   }).format(date);
 
   if (sameDay) {
-    return `today at ${timeLabel}`;
+    return language === "zh-TW" ? `今天 ${timeLabel}` : `today at ${timeLabel}`;
   }
 
-  const dateLabel = new Intl.DateTimeFormat(undefined, {
+  const dateLabel = new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric"
   }).format(date);
 
-  return `${dateLabel} at ${timeLabel}`;
+  return language === "zh-TW" ? `${dateLabel} ${timeLabel}` : `${dateLabel} at ${timeLabel}`;
 }
+import { useTranslation } from "../i18n";

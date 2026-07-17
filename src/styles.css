@@ -70,6 +70,8 @@ textarea {
   color: #fff;
 }
 
+.app-navigation__language { padding: 9px 12px; border-radius: 12px; background: rgba(31, 111, 120, .12); color: #16313a; font-size: .86rem; }
+
 .hero-card {
   padding: clamp(28px, 4vw, 40px);
   border: 1px solid rgba(22, 49, 58, 0.08);

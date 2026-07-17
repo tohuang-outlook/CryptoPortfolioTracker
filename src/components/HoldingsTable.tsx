@@ -1,4 +1,5 @@
 import type { AssetSummary } from "../types/portfolio";
+import { useTranslation } from "../i18n";
 
 const HOLDING_DOT_COLORS = [
   "#1f6f78",
@@ -10,12 +11,13 @@ const HOLDING_DOT_COLORS = [
 ] as const;
 
 export function HoldingsTable({ assets }: { assets: AssetSummary[] }) {
+  const { t } = useTranslation();
   return (
     <section className="panel" aria-labelledby="holdings-heading">
       <div className="panel__header">
         <div>
-          <p className="panel__eyebrow">Current positions</p>
-          <h2 id="holdings-heading">Holdings</h2>
+          <p className="panel__eyebrow">{t("Current positions")}</p>
+          <h2 id="holdings-heading">{t("Holdings")}</h2>
         </div>
       </div>
 
@@ -23,10 +25,10 @@ export function HoldingsTable({ assets }: { assets: AssetSummary[] }) {
         <table className="holdings-table">
           <thead>
             <tr>
-              <th scope="col">Asset</th>
-              <th scope="col">Quantity</th>
-              <th scope="col">Invested</th>
-              <th scope="col">Value</th>
+              <th scope="col">{t("Asset")}</th>
+              <th scope="col">{t("Quantity")}</th>
+              <th scope="col">{t("Invested")}</th>
+              <th scope="col">{t("Value")}</th>
               <th scope="col">P&amp;L</th>
             </tr>
           </thead>

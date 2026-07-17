@@ -6,6 +6,7 @@ import type {
   Transaction,
   TransactionFormInput
 } from "../types/portfolio";
+import { useTranslation } from "../i18n";
 
 type TransactionMutationResult =
   | { success: true }
@@ -33,6 +34,7 @@ export function TransactionHistory({
   }) => TransactionMutationResult;
   onDeleteTransaction?: (id: string) => TransactionMutationResult;
 }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<RowMode>({ type: "view" });
   const [rowError, setRowError] = useState("");
 
@@ -49,8 +51,8 @@ export function TransactionHistory({
     >
       <div className="panel__header">
         <div>
-          <p className="panel__eyebrow">Most recent activity</p>
-          <h2 id="transaction-history-heading">Transaction history</h2>
+          <p className="panel__eyebrow">{t("Most recent activity")}</p>
+          <h2 id="transaction-history-heading">{t("Transaction history")}</h2>
         </div>
       </div>
 
@@ -66,6 +68,7 @@ export function TransactionHistory({
                 key={transaction.id}
                 transaction={transaction}
                 error={rowError}
+                t={t}
                 onCancel={() => {
                   setRowError("");
                   setMode({ type: "view" });
@@ -98,6 +101,7 @@ export function TransactionHistory({
                 setRowError("");
                 setMode({ type: "edit", id: transaction.id });
               }}
+              t={t}
               onDelete={() => {
                 setRowError("");
                 setMode({ type: "confirm-delete", id: transaction.id });
@@ -132,12 +136,14 @@ function EditableTransactionRow({
   transaction,
   error,
   onCancel,
-  onSave
+  onSave,
+  t
 }: {
   transaction: Transaction;
   error: string;
   onCancel: () => void;
   onSave: (input: TransactionFormInput & { id: string }) => void;
+  t: (key: string, variables?: Record<string, string | number>) => string;
 }) {
   const [form, setForm] = useState<TransactionFormInput>({
     assetSymbol: transaction.assetSymbol,
@@ -232,7 +238,7 @@ function EditableTransactionRow({
       >
         <div className="history-edit-grid">
           <label>
-            Asset
+            {t("Asset")}
             <select
               value={form.assetSymbol}
               onChange={(event) =>
@@ -251,7 +257,7 @@ function EditableTransactionRow({
           </label>
 
           <label>
-            Amount Invested
+            {t("Amount Invested")}
             <input
               type="number"
               inputMode="decimal"
@@ -264,7 +270,7 @@ function EditableTransactionRow({
         </label>
 
           <label>
-            Purchase Price
+            {t("Purchase Price")}
             <input
             type="number"
             inputMode="decimal"
@@ -278,7 +284,7 @@ function EditableTransactionRow({
         </label>
 
         <label>
-          Purchase Shares
+          {t("Purchase Shares")}
           <input
             type="number"
             inputMode="decimal"
@@ -292,7 +298,7 @@ function EditableTransactionRow({
         </label>
 
           <label>
-            Purchase Date
+            {t("Purchase Date")}
             <input
               type="date"
               required
@@ -308,7 +314,7 @@ function EditableTransactionRow({
         </div>
 
         <label>
-          Notes
+          {t("Notes")}
           <textarea
             value={form.notes}
             onChange={(event) =>
@@ -321,7 +327,7 @@ function EditableTransactionRow({
         </label>
 
         <p className="history-item__derived">
-          Estimated Quantity: {quantity.toFixed(8)} {form.assetSymbol}
+          {t("Estimated Quantity: {quantity} {symbol}", { quantity: quantity.toFixed(8), symbol: form.assetSymbol })}
         </p>
 
         {error ? <p role="alert">{error}</p> : null}
@@ -331,7 +337,7 @@ function EditableTransactionRow({
             type="submit"
             aria-label={`Save ${transaction.assetName}`}
           >
-            Save
+            {t("Save")}
           </button>
           <button
             type="button"
@@ -339,7 +345,7 @@ function EditableTransactionRow({
             aria-label={`Cancel edit ${transaction.assetName}`}
             onClick={onCancel}
           >
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
       </form>
@@ -354,7 +360,8 @@ function ReadOnlyTransactionRow({
   onEdit,
   onDelete,
   onCancelDelete,
-  onConfirmDelete
+  onConfirmDelete,
+  t
 }: {
   transaction: Transaction;
   isConfirmingDelete: boolean;
@@ -363,6 +370,7 @@ function ReadOnlyTransactionRow({
   onDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
+  t: (key: string, variables?: Record<string, string | number>) => string;
 }) {
   return (
     <article
@@ -374,7 +382,7 @@ function ReadOnlyTransactionRow({
           {transaction.assetName} ({transaction.assetSymbol})
         </p>
         <p className="history-item__meta">
-          Buy · {formatDate(transaction.purchaseDate)} ·{" "}
+          {t("Buy")} · {formatDate(transaction.purchaseDate)} ·{" "}
           {transaction.quantity.toFixed(8)} {transaction.assetSymbol}
         </p>
         {transaction.notes ? (
@@ -382,7 +390,7 @@ function ReadOnlyTransactionRow({
         ) : null}
         {isConfirmingDelete ? (
           <div className="history-item__confirm">
-            <p>Confirm deletion?</p>
+            <p>{t("Confirm deletion?")}</p>
             {error ? <p role="alert">{error}</p> : null}
             <div className="history-item__actions">
               <button
@@ -391,7 +399,7 @@ function ReadOnlyTransactionRow({
                 aria-label={`Confirm delete ${transaction.assetName}`}
                 onClick={onConfirmDelete}
               >
-                Confirm Delete
+                {t("Confirm Delete")}
               </button>
               <button
                 type="button"
@@ -399,7 +407,7 @@ function ReadOnlyTransactionRow({
                 aria-label={`Cancel delete ${transaction.assetName}`}
                 onClick={onCancelDelete}
               >
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </div>
@@ -409,7 +417,7 @@ function ReadOnlyTransactionRow({
       <div className="history-item__side">
         <div className="history-item__amounts">
           <p>{formatCurrency(transaction.amountInvested)}</p>
-          <p>{formatCurrency(transaction.purchasePrice)} entry</p>
+          <p>{formatCurrency(transaction.purchasePrice)} {t("entry")}</p>
         </div>
         <div className="history-item__actions">
           <button
@@ -418,7 +426,7 @@ function ReadOnlyTransactionRow({
             aria-label={`Edit ${transaction.assetName}`}
             onClick={onEdit}
           >
-            Edit
+            {t("Edit")}
           </button>
           <button
             type="button"
@@ -426,7 +434,7 @@ function ReadOnlyTransactionRow({
             aria-label={`Delete ${transaction.assetName}`}
             onClick={onDelete}
           >
-            Delete
+            {t("Delete")}
           </button>
         </div>
       </div>

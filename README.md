@@ -60,3 +60,7 @@ Because this first desktop release is unsigned, macOS may block it the first tim
 4. Confirm the security prompt
 
 If macOS still blocks launch, open `System Settings > Privacy & Security` and allow the app to open.
+
+## Automatic Bitcoin Forecast Updates
+
+After opening the packaged Mac app once, it registers a macOS background task that checks Coinbase hourly. When a new UTC daily BTC close is available, it saves the updated daily and weekly forecasts and reconciles prior forecast results, even while the app is closed. The Mac must be powered on and your user account must be signed in for the background task to run.

@@ -1,28 +1,30 @@
 import type { PortfolioSummary } from "../types/portfolio";
+import { useTranslation } from "../i18n";
 
 export function SummaryCards({
   portfolio
 }: {
   portfolio: PortfolioSummary;
 }) {
+  const { t } = useTranslation();
   const cards = [
     {
-      label: "Total invested",
+      label: t("Total invested"),
       value: formatCurrency(portfolio.totalInvested),
       tone: "neutral"
     },
     {
-      label: "Portfolio value",
+      label: t("Portfolio value"),
       value: formatCurrency(portfolio.portfolioValue),
       tone: "neutral"
     },
     {
-      label: "Unrealized P&L",
+      label: t("Unrealized P&L"),
       value: formatSignedCurrency(portfolio.totalUnrealizedPnL),
       tone: portfolio.totalUnrealizedPnL >= 0 ? "positive" : "negative"
     },
     {
-      label: "Total return",
+      label: t("Total return"),
       value: formatPercent(portfolio.totalReturnPercent),
       tone: portfolio.totalReturnPercent >= 0 ? "positive" : "negative"
     }
@@ -31,7 +33,7 @@ export function SummaryCards({
   return (
     <section
       className="summary-grid"
-      aria-label="Portfolio summary"
+      aria-label={t("Portfolio summary")}
     >
       {cards.map((card) => (
         <article

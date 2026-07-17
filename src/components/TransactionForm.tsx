@@ -5,6 +5,7 @@ import type {
   PurchaseField,
   TransactionFormInput
 } from "../types/portfolio";
+import { useTranslation } from "../i18n";
 
 type TransactionFormResult =
   | { success: true }
@@ -24,6 +25,7 @@ export function TransactionForm({
 }: {
   onSubmit: (values: TransactionFormInput) => TransactionFormResult;
 }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<TransactionFormInput>(INITIAL_FORM);
   const [error, setError] = useState("");
   const [lastEditedField, setLastEditedField] =
@@ -99,7 +101,7 @@ export function TransactionForm({
 
   return (
     <section aria-labelledby="transaction-form-heading">
-      <h2 id="transaction-form-heading">Add transaction</h2>
+      <h2 id="transaction-form-heading">{t("Add transaction")}</h2>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -116,7 +118,7 @@ export function TransactionForm({
         }}
       >
         <label>
-          Asset
+          {t("Asset")}
           <select
             value={form.assetSymbol}
             onChange={(event) =>
@@ -135,7 +137,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          Amount Invested
+          {t("Amount Invested")}
           <input
             type="number"
             inputMode="decimal"
@@ -148,7 +150,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          Purchase Price
+          {t("Purchase Price")}
           <input
             type="number"
             inputMode="decimal"
@@ -162,7 +164,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          Purchase Shares
+          {t("Purchase Shares")}
           <input
             type="number"
             inputMode="decimal"
@@ -176,7 +178,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          Purchase Date
+          {t("Purchase Date")}
           <input
             type="date"
             required
@@ -191,7 +193,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          Notes
+          {t("Notes")}
           <textarea
             value={form.notes}
             onChange={(event) =>
@@ -203,10 +205,10 @@ export function TransactionForm({
           />
         </label>
 
-        <p>Estimated Quantity: {quantity.toFixed(8)} {form.assetSymbol}</p>
+        <p>{t("Estimated Quantity: {quantity} {symbol}", { quantity: quantity.toFixed(8), symbol: form.assetSymbol })}</p>
         {error ? <p role="alert">{error}</p> : null}
 
-        <button type="submit">Save Transaction</button>
+        <button type="submit">{t("Save Transaction")}</button>
       </form>
     </section>
   );

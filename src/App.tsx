@@ -12,8 +12,14 @@ import { useProfiles } from "./hooks/useProfiles";
 import { usePortfolio } from "./hooks/usePortfolio";
 import { usePrices } from "./hooks/usePrices";
 import { useState } from "react";
+import { LanguageProvider, useTranslation } from "./i18n";
 
 export default function App() {
+  return <LanguageProvider><AppContent /></LanguageProvider>;
+}
+
+function AppContent() {
+  const { language, setLanguage, t } = useTranslation();
   const [workspace, setWorkspace] = useState<"portfolio" | "forecast">("portfolio");
   const { prices, status, lastUpdated } = usePrices();
   const {
@@ -37,16 +43,17 @@ export default function App() {
   return (
     <main className="app-shell">
       <section className="dashboard-shell">
-        <nav className="app-navigation" aria-label="App workspace">
-          <button className={workspace === "portfolio" ? "app-navigation__item app-navigation__item--active" : "app-navigation__item"} onClick={() => setWorkspace("portfolio")}>Portfolio</button>
-          <button className={workspace === "forecast" ? "app-navigation__item app-navigation__item--active" : "app-navigation__item"} onClick={() => setWorkspace("forecast")}>Bitcoin Forecast</button>
+        <nav className="app-navigation" aria-label={t("App workspace")}>
+          <button className={workspace === "portfolio" ? "app-navigation__item app-navigation__item--active" : "app-navigation__item"} onClick={() => setWorkspace("portfolio")}>{t("Portfolio")}</button>
+          <button className={workspace === "forecast" ? "app-navigation__item app-navigation__item--active" : "app-navigation__item"} onClick={() => setWorkspace("forecast")}>{t("Bitcoin Forecast")}</button>
+          <button className="app-navigation__language" onClick={() => setLanguage(language === "en" ? "zh-TW" : "en")} aria-label={t(language === "en" ? "Switch to Chinese" : "Switch to English")}>{language === "en" ? "中文" : "EN"}</button>
         </nav>
         <header className="hero-card">
           <div className="hero-copy-block">
-            <p className="eyebrow">{workspace === "portfolio" ? "Calm portfolio tracking" : "Adaptive market intelligence"}</p>
-            <h1 className="hero-title">{workspace === "portfolio" ? "Crypto Portfolio Tracker" : "Bitcoin Forecast"}</h1>
+            <p className="eyebrow">{t(workspace === "portfolio" ? "Calm portfolio tracking" : "Adaptive market intelligence")}</p>
+            <h1 className="hero-title">{t(workspace === "portfolio" ? "Crypto Portfolio Tracker" : "Bitcoin Forecast")}</h1>
             <p className="hero-copy">
-              {workspace === "portfolio" ? "Track your crypto portfolio with clarity, confidence, and less stress." : "Understand the BTC trend, tomorrow's estimated close, and how the model learns from its past calls."}
+              {t(workspace === "portfolio" ? "Track your crypto portfolio with clarity, confidence, and less stress." : "Understand the BTC trend, tomorrow's estimated close, and how the model learns from its past calls.")}
             </p>
           </div>
           <div className="hero-status">

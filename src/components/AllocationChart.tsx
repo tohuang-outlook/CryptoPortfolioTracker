@@ -5,6 +5,7 @@ import {
   Tooltip
 } from "recharts";
 import type { AssetSummary } from "../types/portfolio";
+import { useTranslation } from "../i18n";
 
 const CHART_COLORS = [
   "#1f6f78",
@@ -16,6 +17,7 @@ const CHART_COLORS = [
 ] as const;
 
 export function AllocationChart({ assets }: { assets: AssetSummary[] }) {
+  const { t } = useTranslation();
   const chartData = assets.map((asset, index) => ({
     name: asset.assetSymbol,
     fullName: asset.assetName,
@@ -28,8 +30,8 @@ export function AllocationChart({ assets }: { assets: AssetSummary[] }) {
     <section className="panel" aria-labelledby="allocation-heading">
       <div className="panel__header">
         <div>
-          <p className="panel__eyebrow">Portfolio mix</p>
-          <h2 id="allocation-heading">Allocation</h2>
+          <p className="panel__eyebrow">{t("Portfolio mix")}</p>
+          <h2 id="allocation-heading">{t("Allocation")}</h2>
         </div>
       </div>
 

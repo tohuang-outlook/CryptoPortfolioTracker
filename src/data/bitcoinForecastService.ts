@@ -15,11 +15,11 @@ type CoinbaseCandle = [number, number, number, number, number, number];
 
 export async function fetchBitcoinForecast(): Promise<BitcoinForecast> {
   const candles = await fetchBitcoinDailyCandles();
-  const records = reconcileForecastRecords(candles);
+  const records = reconcileForecastRecords(await readForecastRecords(), candles);
   const forecast = buildForecast(candles, records);
   const nextRecords = upsertForecastRecords(records, forecast);
 
-  saveForecastRecords(nextRecords);
+  await saveForecastRecords(nextRecords);
 
   return {
     ...forecast,
@@ -197,10 +197,13 @@ function buildForecast(
   };
 }
 
-function reconcileForecastRecords(candles: BitcoinCandle[]): ForecastRecord[] {
+function reconcileForecastRecords(
+  records: ForecastRecord[],
+  candles: BitcoinCandle[]
+): ForecastRecord[] {
   const closeByDate = new Map(candles.map((candle) => [candle.date, candle.close]));
 
-  return readForecastRecords().map((record) => ({
+  return records.map((record) => ({
     ...record,
     actualClose: closeByDate.get(record.targetDate) ?? record.actualClose
   }));
@@ -249,9 +252,11 @@ function upsertForecastRecord(records: ForecastRecord[], record: ForecastRecord)
   return nextRecords;
 }
 
-function readForecastRecords(): ForecastRecord[] {
+async function readForecastRecords(): Promise<ForecastRecord[]> {
   try {
-    const rawValue = window.localStorage.getItem(FORECAST_STORAGE_KEY);
+    const rawValue = window.desktopApp
+      ? await window.desktopApp.forecastStorage.load()
+      : window.localStorage.getItem(FORECAST_STORAGE_KEY);
     if (!rawValue) {
       return [];
     }
@@ -263,8 +268,15 @@ function readForecastRecords(): ForecastRecord[] {
   }
 }
 
-function saveForecastRecords(records: ForecastRecord[]) {
-  window.localStorage.setItem(FORECAST_STORAGE_KEY, JSON.stringify(records));
+async function saveForecastRecords(records: ForecastRecord[]) {
+  const value = JSON.stringify(records);
+
+  if (window.desktopApp) {
+    await window.desktopApp.forecastStorage.save(value);
+    return;
+  }
+
+  window.localStorage.setItem(FORECAST_STORAGE_KEY, value);
 }
 
 function isForecastRecord(value: unknown): value is ForecastRecord {
