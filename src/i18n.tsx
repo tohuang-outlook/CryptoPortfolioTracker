@@ -95,6 +95,8 @@ const zhTW: Record<string, string> = {
   "Average error": "平均誤差",
   "Direction accuracy": "方向準確率",
   "Forecast calibration": "預測校正",
+  "Daily forecast tracking": "每日預測追蹤",
+  "Chart legend": "圖表圖例",
   "Forecast vs actual close": "預測與實際收盤價",
   "This chart will grow once two daily forecasts have settled.": "累積至少兩筆已結算日預測後，圖表會顯示於此。",
   Forecast: "預測",

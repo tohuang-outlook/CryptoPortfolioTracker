@@ -29,7 +29,10 @@ export function BitcoinForecastDashboard() {
   }
 
   const forecastDirectionClass = forecast.direction.toLowerCase();
-  const settledRecords = forecast.records.filter((record) => record.actualClose !== undefined).slice(-14);
+  const settledRecords = forecast.records
+    .filter((record) => (record.horizon ?? "daily") === "daily" && record.actualClose !== undefined)
+    .sort((left, right) => left.targetDate.localeCompare(right.targetDate))
+    .slice(-14);
   const errorChart = settledRecords.map((record) => ({
     date: shortDate(record.targetDate, language),
     forecast: Math.round(record.predictedClose),
@@ -78,6 +81,35 @@ export function BitcoinForecastDashboard() {
         <div className="weekly-forecast__metric"><span>{t("Projected close")}</span><strong>{currency.format(forecast.weeklyForecast.predictedClose)}</strong><small>{shortDate(forecast.weeklyForecast.targetDate, language)}</small></div>
         <div className="weekly-forecast__metric"><span>{t("Expected range")}</span><strong>{currency.format(forecast.weeklyForecast.lowerBound)} - {currency.format(forecast.weeklyForecast.upperBound)}</strong><small>{forecast.weeklyForecast.confidence}% {t("confidence")}</small></div>
       </section>
+
+      <article className="panel forecast-panel forecast-panel--daily-chart">
+        <div className="panel__header forecast-chart__header">
+          <div>
+            <p className="panel__eyebrow">{t("Daily forecast tracking")}</p>
+            <h2>{t("Forecast vs actual close")}</h2>
+          </div>
+          <div className="forecast-chart__legend" aria-label={t("Chart legend")}>
+            <span><i className="forecast-chart__legend-dot forecast-chart__legend-dot--forecast" />{t("Forecast")}</span>
+            <span><i className="forecast-chart__legend-dot forecast-chart__legend-dot--actual" />{t("Actual")}</span>
+          </div>
+        </div>
+        {errorChart.length < 2 ? (
+          <p className="forecast-empty">{t("This chart will grow once two daily forecasts have settled.")}</p>
+        ) : (
+          <div className="forecast-chart forecast-chart--daily">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={errorChart} margin={{ top: 12, right: 12, left: 8, bottom: 0 }}>
+                <CartesianGrid stroke="#dbe9e8" vertical={false} />
+                <XAxis dataKey="date" axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={(value) => `$${Math.round(value / 1000)}k`} axisLine={false} tickLine={false} width={52} />
+                <Tooltip formatter={(value) => currency.format(Number(value))} />
+                <Line type="monotone" dataKey="forecast" name={t("Forecast")} stroke="#2a7a71" strokeWidth={3} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="actual" name={t("Actual")} stroke="#c26b49" strokeWidth={3} dot={{ r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </article>
 
       <section className="forecast-status-grid">
         <article className="panel forecast-status-card">
@@ -210,31 +242,6 @@ export function BitcoinForecastDashboard() {
             </div>
           ))}
         </div>
-      </article>
-
-      <article className="panel forecast-panel forecast-panel--wide">
-        <div className="panel__header">
-          <div>
-            <p className="panel__eyebrow">{t("Forecast calibration")}</p>
-            <h2>{t("Forecast vs actual close")}</h2>
-          </div>
-        </div>
-        {errorChart.length < 2 ? (
-          <p className="forecast-empty">{t("This chart will grow once two daily forecasts have settled.")}</p>
-        ) : (
-          <div className="forecast-chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={errorChart} margin={{ top: 12, right: 12, left: 8, bottom: 0 }}>
-                <CartesianGrid stroke="#dbe9e8" vertical={false} />
-                <XAxis dataKey="date" axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(value) => `$${Math.round(value / 1000)}k`} axisLine={false} tickLine={false} width={52} />
-                <Tooltip formatter={(value) => currency.format(Number(value))} />
-                <Line type="monotone" dataKey="forecast" name={t("Forecast")} stroke="#2a7a71" strokeWidth={3} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="actual" name={t("Actual")} stroke="#c26b49" strokeWidth={3} dot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
       </article>
 
       <article className="forecast-disclaimer">

@@ -776,7 +776,7 @@ button:hover {
 .signal-row strong, .signal-row p { margin: 0; }.signal-row p { margin-top: 4px; color: #5a7674; font-size: .9rem; }.signal-row__value { white-space: nowrap; }.signal-row__value--positive { color: #15725f; }.signal-row__value--negative { color: #b2573f; }.signal-row__value--neutral { color: #5a7674; }
 .forecast-empty { margin: 18px 0 0; color: #5a7674; line-height: 1.6; }
 .accuracy-stats { display: grid; gap: 15px; margin-top: 20px; }.accuracy-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }.accuracy-stats span { color: #5a7674; }.accuracy-stats strong { font-size: 1.4rem; }
-.forecast-panel--wide { min-height: 340px; }.forecast-chart { width: 100%; height: 230px; margin-top: 10px; }.forecast-loading { min-height: 260px; display: grid; place-items: center; color: #557176; text-align: center; }.forecast-loading--error { color: #b2573f; }
+.forecast-panel--daily-chart { min-height: 330px; }.forecast-chart { width: 100%; height: 230px; margin-top: 10px; }.forecast-chart--daily { height: 255px; margin-top: 16px; }.forecast-chart__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }.forecast-chart__legend { display: flex; flex-wrap: wrap; gap: 14px; color: #557176; font-size: .84rem; font-weight: 700; }.forecast-chart__legend span { display: inline-flex; align-items: center; gap: 7px; }.forecast-chart__legend-dot { width: 10px; height: 10px; border-radius: 50%; }.forecast-chart__legend-dot--forecast { background: #2a7a71; }.forecast-chart__legend-dot--actual { background: #c26b49; }.forecast-loading { min-height: 260px; display: grid; place-items: center; color: #557176; text-align: center; }.forecast-loading--error { color: #b2573f; }
 .forecast-disclaimer { padding: 0 10px; color: #5a7674; font-size: .84rem; text-align: center; }
 
 @media (max-width: 720px) {
@@ -804,6 +804,8 @@ button:hover {
   .weekly-forecast { grid-template-columns: 1fr; }
 
   .forecast-status-grid { grid-template-columns: 1fr; }
+
+  .forecast-chart__header { align-items: flex-start; flex-direction: column; }
 
   .model-leaderboard { overflow-x: auto; }
   .model-leaderboard__header, .model-leaderboard__row { min-width: 650px; }
