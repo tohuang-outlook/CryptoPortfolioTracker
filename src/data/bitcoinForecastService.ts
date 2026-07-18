@@ -1,6 +1,7 @@
 import type {
   BitcoinCandle,
   BitcoinForecast,
+  ForecastAsset,
   ForecastHorizon,
   ForecastRecord,
   ForecastSignal
@@ -16,38 +17,49 @@ import {
   clamp,
   evaluateForecastBenchmark
 } from "./forecastModels";
-import { applyOpenInterestHistory, fetchBitcoinDerivatives } from "./derivativesService";
+import { applyOpenInterestHistory, fetchAssetDerivatives } from "./derivativesService";
 
-const COINBASE_BTC_CANDLES_URL =
-  "https://api.exchange.coinbase.com/products/BTC-USD/candles";
-const FORECAST_STORAGE_KEY = "crypto-portfolio-tracker-btc-forecast-records-v1";
+const COINBASE_CANDLES_URL = "https://api.exchange.coinbase.com/products";
+const FORECAST_STORAGE_KEY = "crypto-portfolio-tracker-forecast-records-v2";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+const forecastAssets: Record<ForecastAsset, { name: string }> = {
+  BTC: { name: "Bitcoin" },
+  ETH: { name: "Ethereum" }
+};
 
 type CoinbaseCandle = [number, number, number, number, number, number];
 
-export async function fetchBitcoinForecast(): Promise<BitcoinForecast> {
+export async function fetchAssetForecast(assetSymbol: ForecastAsset = "BTC"): Promise<BitcoinForecast> {
   const [candles, derivatives] = await Promise.all([
-    fetchBitcoinDailyCandles(),
-    fetchBitcoinDerivatives()
+    fetchAssetDailyCandles(assetSymbol),
+    fetchAssetDerivatives(assetSymbol)
   ]);
-  const records = reconcileForecastRecords(await readForecastRecords(), candles);
+  const allRecords = await readAllForecastRecords();
+  const records = reconcileForecastRecords(recordsForAsset(allRecords, assetSymbol), candles);
   const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records));
-  const nextRecords = upsertForecastRecords(records, forecast);
+  const nextRecords = upsertForecastRecords(records, forecast, assetSymbol);
 
-  await saveForecastRecords(nextRecords);
+  await saveForecastRecords(assetSymbol, nextRecords, allRecords);
 
   return {
     ...forecast,
+    assetSymbol,
+    assetName: forecastAssets[assetSymbol].name,
     records: nextRecords,
     accuracy: calculateAccuracy(nextRecords, "daily"),
     weeklyAccuracy: calculateAccuracy(nextRecords, "weekly")
   };
 }
 
-async function fetchBitcoinDailyCandles(): Promise<BitcoinCandle[]> {
+export function fetchBitcoinForecast() {
+  return fetchAssetForecast("BTC");
+}
+
+async function fetchAssetDailyCandles(assetSymbol: ForecastAsset): Promise<BitcoinCandle[]> {
   const end = new Date();
   const start = new Date(end.getTime() - 120 * DAY_IN_MS);
-  const url = new URL(COINBASE_BTC_CANDLES_URL);
+  const url = new URL(`${COINBASE_CANDLES_URL}/${assetSymbol}-USD/candles`);
   url.searchParams.set("start", start.toISOString());
   url.searchParams.set("end", end.toISOString());
   url.searchParams.set("granularity", "86400");
@@ -56,13 +68,13 @@ async function fetchBitcoinDailyCandles(): Promise<BitcoinCandle[]> {
   const response = await fetch(url);
 
   if (!response.ok) {
-    throw new Error("Unable to fetch Bitcoin daily candles");
+    throw new Error(`Unable to fetch ${assetSymbol} daily candles`);
   }
 
   const payload = (await response.json()) as unknown;
 
   if (!Array.isArray(payload)) {
-    throw new Error("Malformed Bitcoin candle payload");
+    throw new Error(`Malformed ${assetSymbol} candle payload`);
   }
 
   const now = Date.now();
@@ -74,7 +86,7 @@ async function fetchBitcoinDailyCandles(): Promise<BitcoinCandle[]> {
     .sort((left, right) => left.timestamp - right.timestamp);
 
   if (candles.length < 35) {
-    throw new Error("Not enough Bitcoin history to calculate a forecast");
+    throw new Error(`Not enough ${assetSymbol} history to calculate a forecast`);
   }
 
   return candles;
@@ -107,7 +119,7 @@ function buildForecast(
   candles: BitcoinCandle[],
   records: ForecastRecord[],
   derivatives: BitcoinForecast["derivatives"]
-): Omit<BitcoinForecast, "records" | "accuracy" | "weeklyAccuracy"> {
+): Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy"> {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
   const currentClose = closes[closes.length - 1];
@@ -257,9 +269,11 @@ function reconcileForecastRecords(
 
 function upsertForecastRecords(
   records: ForecastRecord[],
-  forecast: Omit<BitcoinForecast, "records" | "accuracy" | "weeklyAccuracy">
+  forecast: Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy">,
+  assetSymbol: ForecastAsset
 ): ForecastRecord[] {
   const dailyRecord: ForecastRecord = {
+    assetSymbol,
     horizon: "daily",
     targetDate: forecast.targetDate,
     createdAt: new Date().toISOString(),
@@ -278,6 +292,7 @@ function upsertForecastRecords(
     hasForecastEdge: forecast.benchmark.hasEdge
   };
   const weeklyRecord: ForecastRecord = {
+    assetSymbol,
     horizon: "weekly",
     targetDate: forecast.weeklyForecast.targetDate,
     createdAt: new Date().toISOString(),
@@ -309,11 +324,11 @@ function upsertForecastRecord(records: ForecastRecord[], record: ForecastRecord)
   return nextRecords;
 }
 
-async function readForecastRecords(): Promise<ForecastRecord[]> {
+async function readAllForecastRecords(): Promise<ForecastRecord[]> {
   try {
     const rawValue = window.desktopApp
       ? await window.desktopApp.forecastStorage.load()
-      : window.localStorage.getItem(FORECAST_STORAGE_KEY);
+      : window.localStorage.getItem(FORECAST_STORAGE_KEY) ?? window.localStorage.getItem("crypto-portfolio-tracker-btc-forecast-records-v1");
     if (!rawValue) {
       return [];
     }
@@ -325,8 +340,11 @@ async function readForecastRecords(): Promise<ForecastRecord[]> {
   }
 }
 
-async function saveForecastRecords(records: ForecastRecord[]) {
-  const value = JSON.stringify(records);
+async function saveForecastRecords(assetSymbol: ForecastAsset, records: ForecastRecord[], allRecords: ForecastRecord[]) {
+  const value = JSON.stringify([
+    ...allRecords.filter((record) => !belongsToAsset(record, assetSymbol)),
+    ...records
+  ]);
 
   if (window.desktopApp) {
     await window.desktopApp.forecastStorage.save(value);
@@ -334,6 +352,15 @@ async function saveForecastRecords(records: ForecastRecord[]) {
   }
 
   window.localStorage.setItem(FORECAST_STORAGE_KEY, value);
+}
+
+function recordsForAsset(records: ForecastRecord[], assetSymbol: ForecastAsset) {
+  return records.filter((record) => belongsToAsset(record, assetSymbol));
+}
+
+function belongsToAsset(record: ForecastRecord, assetSymbol: ForecastAsset) {
+  // Existing records were BTC-only, so untagged history remains Bitcoin history.
+  return (record.assetSymbol ?? "BTC") === assetSymbol;
 }
 
 function isForecastRecord(value: unknown): value is ForecastRecord {

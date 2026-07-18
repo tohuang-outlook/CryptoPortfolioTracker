@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { fetchBitcoinForecast } from "../data/bitcoinForecastService";
-import type { BitcoinForecast } from "../types/forecast";
+import { fetchAssetForecast } from "../data/bitcoinForecastService";
+import type { BitcoinForecast, ForecastAsset } from "../types/forecast";
 
-export function useBitcoinForecast() {
+export function useBitcoinForecast(assetSymbol: ForecastAsset) {
   const [forecast, setForecast] = useState<BitcoinForecast | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
@@ -13,7 +13,7 @@ export function useBitcoinForecast() {
     async function load() {
       setStatus("loading");
       try {
-        const nextForecast = await fetchBitcoinForecast();
+        const nextForecast = await fetchAssetForecast(assetSymbol);
         if (!active) return;
         setForecast(nextForecast);
         setStatus("ready");
@@ -32,7 +32,7 @@ export function useBitcoinForecast() {
       active = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [assetSymbol]);
 
   return { forecast, status, error };
 }

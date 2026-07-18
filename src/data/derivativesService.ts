@@ -1,16 +1,21 @@
-import type { DerivativeMarketData } from "../types/forecast.js";
+import type { DerivativeMarketData, ForecastAsset } from "../types/forecast.js";
 
-const FUNDING_URL = "https://www.okx.com/api/v5/public/funding-rate-history?instId=BTC-USDT-SWAP&limit=100";
-const OPEN_INTEREST_URL = "https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=BTC-USDT-SWAP";
+function fundingUrl(asset: ForecastAsset) {
+  return `https://www.okx.com/api/v5/public/funding-rate-history?instId=${asset}-USDT-SWAP&limit=100`;
+}
+
+function openInterestUrl(asset: ForecastAsset) {
+  return `https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=${asset}-USDT-SWAP`;
+}
 
 type ApiEnvelope<T> = { code?: string; data?: T };
 type FundingRow = { fundingRate?: string; fundingTime?: string };
 type OpenInterestRow = { oiUsd?: string; ts?: string };
 
-export async function fetchBitcoinDerivatives(): Promise<DerivativeMarketData | null> {
+export async function fetchAssetDerivatives(asset: ForecastAsset): Promise<DerivativeMarketData | null> {
   const [fundingResult, openInterestResult] = await Promise.allSettled([
-    fetchData<FundingRow[]>(FUNDING_URL),
-    fetchData<OpenInterestRow[]>(OPEN_INTEREST_URL)
+    fetchData<FundingRow[]>(fundingUrl(asset)),
+    fetchData<OpenInterestRow[]>(openInterestUrl(asset))
   ]);
 
   if (fundingResult.status !== "fulfilled" || openInterestResult.status !== "fulfilled") return null;
@@ -36,6 +41,10 @@ export async function fetchBitcoinDerivatives(): Promise<DerivativeMarketData | 
     openInterestChange7Day: null,
     asOfDate: new Date(Math.max(latestFunding.timestamp, latestOpenInterest.timestamp)).toISOString().slice(0, 10)
   };
+}
+
+export function fetchBitcoinDerivatives() {
+  return fetchAssetDerivatives("BTC");
 }
 
 export function applyOpenInterestHistory<T extends { derivativeData?: DerivativeMarketData }>(

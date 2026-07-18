@@ -12,12 +12,13 @@ import {
   evaluateForecastBenchmark
 } from "../src/data/forecastModels.js";
 import { detectForecastAlerts, type ForecastAlert } from "../src/data/forecastAlerts.js";
-import { applyOpenInterestHistory, fetchBitcoinDerivatives } from "../src/data/derivativesService.js";
-import type { DerivativeMarketData } from "../src/types/forecast.js";
+import { applyOpenInterestHistory, fetchAssetDerivatives } from "../src/data/derivativesService.js";
+import type { DerivativeMarketData, ForecastAsset } from "../src/types/forecast.js";
 
 const FORECAST_FILE_NAME = "bitcoin-forecast-records.json";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const CANDLES_URL = "https://api.exchange.coinbase.com/products/BTC-USD/candles";
+const CANDLES_URL = "https://api.exchange.coinbase.com/products";
+const forecastAssets: ForecastAsset[] = ["BTC", "ETH"];
 
 interface Candle {
   date: string;
@@ -30,6 +31,7 @@ interface Candle {
 }
 
 interface RecordItem {
+  assetSymbol?: ForecastAsset;
   horizon?: "daily" | "weekly";
   targetDate: string;
   createdAt: string;
@@ -48,26 +50,31 @@ interface RecordItem {
 }
 
 export async function runForecastUpdate(userDataPath: string): Promise<ForecastAlert[]> {
-  const [candles, derivatives] = await Promise.all([fetchDailyCandles(), fetchBitcoinDerivatives()]);
   const filePath = path.join(userDataPath, FORECAST_FILE_NAME);
   const existingRecords = await readRecords(filePath);
-  const records = reconcileRecords(existingRecords, candles);
-  const newlySettled = records.filter(
-    (record, index) => record.actualClose !== undefined && existingRecords[index]?.actualClose === undefined
-  );
-  const nextRecords = upsertForecasts(records, candles, applyOpenInterestHistory(derivatives, records));
-  const currentDaily = nextRecords.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1)!;
-  const previousDaily = records.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1);
-  const alerts = detectForecastAlerts(previousDaily, currentDaily, newlySettled);
+  let nextRecords = existingRecords;
+  const alerts: ForecastAlert[] = [];
+
+  for (const assetSymbol of forecastAssets) {
+    const [candles, derivatives] = await Promise.all([fetchDailyCandles(assetSymbol), fetchAssetDerivatives(assetSymbol)]);
+    const priorAssetRecords = recordsForAsset(nextRecords, assetSymbol);
+    const records = reconcileRecords(priorAssetRecords, candles);
+    const newlySettled = records.filter((record, index) => record.actualClose !== undefined && priorAssetRecords[index]?.actualClose === undefined);
+    const updatedAssetRecords = upsertForecasts(records, candles, applyOpenInterestHistory(derivatives, records), assetSymbol);
+    const currentDaily = updatedAssetRecords.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1)!;
+    const previousDaily = records.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1);
+    alerts.push(...detectForecastAlerts(previousDaily, currentDaily, newlySettled, assetSymbol));
+    nextRecords = [...nextRecords.filter((record) => !belongsToAsset(record, assetSymbol)), ...updatedAssetRecords];
+  }
 
   await writeRecords(filePath, nextRecords);
   return alerts;
 }
 
-async function fetchDailyCandles(): Promise<Candle[]> {
+async function fetchDailyCandles(assetSymbol: ForecastAsset): Promise<Candle[]> {
   const end = new Date();
   const start = new Date(end.getTime() - 120 * DAY_IN_MS);
-  const url = new URL(CANDLES_URL);
+  const url = new URL(`${CANDLES_URL}/${assetSymbol}-USD/candles`);
   url.searchParams.set("start", start.toISOString());
   url.searchParams.set("end", end.toISOString());
   url.searchParams.set("granularity", "86400");
@@ -85,7 +92,7 @@ async function fetchDailyCandles(): Promise<Candle[]> {
     .filter((candle) => candle.timestamp + DAY_IN_MS <= now)
     .sort((left, right) => left.timestamp - right.timestamp);
 
-  if (candles.length < 35) throw new Error("Not enough BTC history for forecast update");
+  if (candles.length < 35) throw new Error(`Not enough ${assetSymbol} history for forecast update`);
   return candles;
 }
 
@@ -113,7 +120,7 @@ function reconcileRecords(records: RecordItem[], candles: Candle[]) {
   }));
 }
 
-function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: DerivativeMarketData | null) {
+function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: DerivativeMarketData | null, assetSymbol: ForecastAsset) {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
   const latest = candles[candles.length - 1];
@@ -142,6 +149,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
   );
 
   const dailyPrediction = makeRecord({
+    assetSymbol,
     horizon: "daily",
     targetDate: toDate(latest.timestamp + DAY_IN_MS),
     baseClose: currentClose,
@@ -162,6 +170,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
     hasForecastEdge: benchmark.hasEdge
   });
   const weeklyPrediction = makeRecord({
+    assetSymbol,
     horizon: "weekly",
     targetDate: toDate(latest.timestamp + 7 * DAY_IN_MS),
     baseClose: currentClose,
@@ -181,7 +190,8 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
   return upsertRecord(upsertRecord(records, dailyPrediction), weeklyPrediction).slice(-180);
 }
 
-function makeRecord({ horizon, targetDate, baseClose, expectedReturn, rangePercent, confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, hasForecastEdge }: {
+function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedReturn, rangePercent, confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, hasForecastEdge }: {
+  assetSymbol: ForecastAsset;
   horizon: "daily" | "weekly";
   targetDate: string;
   baseClose: number;
@@ -196,11 +206,11 @@ function makeRecord({ horizon, targetDate, baseClose, expectedReturn, rangePerce
   hasForecastEdge?: boolean;
 }): RecordItem {
   const predictedClose = baseClose * (1 + expectedReturn);
-  return { horizon, targetDate, createdAt: new Date().toISOString(), baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, hasForecastEdge };
+  return { assetSymbol, horizon, targetDate, createdAt: new Date().toISOString(), baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, hasForecastEdge };
 }
 
 function upsertRecord(records: RecordItem[], record: RecordItem) {
-  const index = records.findIndex((item) => item.targetDate === record.targetDate && getHorizon(item) === record.horizon);
+  const index = records.findIndex((item) => item.targetDate === record.targetDate && getHorizon(item) === record.horizon && item.assetSymbol === record.assetSymbol);
   const next = [...records];
   if (index === -1) next.push(record);
   else if (next[index].actualClose === undefined) next[index] = record;
@@ -214,6 +224,8 @@ function calculateBias(records: RecordItem[], horizon: "daily" | "weekly") {
 }
 
 function getHorizon(record: RecordItem) { return record.horizon ?? "daily"; }
+function belongsToAsset(record: RecordItem, assetSymbol: ForecastAsset) { return (record.assetSymbol ?? "BTC") === assetSymbol; }
+function recordsForAsset(records: RecordItem[], assetSymbol: ForecastAsset) { return records.filter((record) => belongsToAsset(record, assetSymbol)); }
 function byTargetDate(left: RecordItem, right: RecordItem) { return left.targetDate.localeCompare(right.targetDate); }
 function getDirection(expectedReturn: number, threshold: number): "Bullish" | "Bearish" | "Neutral" { return expectedReturn > threshold ? "Bullish" : expectedReturn < -threshold ? "Bearish" : "Neutral"; }
 function toDate(timestamp: number) { return new Date(timestamp).toISOString().slice(0, 10); }

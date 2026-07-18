@@ -9,6 +9,8 @@ import {
 } from "recharts";
 import { useBitcoinForecast } from "../hooks/useBitcoinForecast";
 import { useTranslation } from "../i18n";
+import type { ForecastAsset } from "../types/forecast";
+import { useState } from "react";
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -17,11 +19,12 @@ const currency = new Intl.NumberFormat("en-US", {
 });
 
 export function BitcoinForecastDashboard() {
-  const { forecast, status, error } = useBitcoinForecast();
+  const [assetSymbol, setAssetSymbol] = useState<ForecastAsset>("BTC");
+  const { forecast, status, error } = useBitcoinForecast(assetSymbol);
   const { language, t } = useTranslation();
 
   if (status === "loading" && !forecast) {
-    return <section className="forecast-loading panel">{t("Preparing the Bitcoin forecast from daily market data...")}</section>;
+    return <section className="forecast-loading panel">{t("Preparing the {asset} forecast from daily market data...", { asset: assetSymbol })}</section>;
   }
 
   if (status === "error" || !forecast) {
@@ -45,12 +48,17 @@ export function BitcoinForecastDashboard() {
 
   return (
     <section className="forecast-dashboard">
+      <div className="forecast-asset-switcher" aria-label={t("Forecast asset")}>
+        {(["BTC", "ETH"] as const).map((symbol) => (
+          <button key={symbol} type="button" className={assetSymbol === symbol ? "forecast-asset-switcher__item forecast-asset-switcher__item--active" : "forecast-asset-switcher__item"} onClick={() => setAssetSymbol(symbol)}>{symbol}</button>
+        ))}
+      </div>
       <header className="forecast-hero panel">
         <div>
           <p className="panel__eyebrow">{t("Adaptive daily forecast")}</p>
-          <h2>{t("Bitcoin Forecast")}</h2>
+          <h2>{forecast.assetName} {t("Forecast")}</h2>
           <p className="forecast-hero__copy">
-            {t("A transparent next-day estimate based on BTC daily trend, momentum, volatility, and prior forecast error.")}
+            {t("A transparent next-day estimate based on {asset} daily trend, momentum, volatility, and prior forecast error.", { asset: assetSymbol })}
           </p>
         </div>
         <div className={`forecast-bias forecast-bias--${forecastDirectionClass}`}>
@@ -61,7 +69,7 @@ export function BitcoinForecastDashboard() {
       </header>
 
       <section className="forecast-summary-grid">
-        <ForecastMetric label={t("BTC daily close")} value={currency.format(forecast.currentClose)} detail={`${t("Closed")} ${shortDate(forecast.asOfDate, language)}`} />
+        <ForecastMetric label={t("{asset} daily close", { asset: assetSymbol })} value={currency.format(forecast.currentClose)} detail={`${t("Closed")} ${shortDate(forecast.asOfDate, language)}`} />
         <ForecastMetric label={t("Next daily close")} value={currency.format(forecast.predictedClose)} detail={shortDate(forecast.targetDate, language)} />
         <ForecastMetric label={t("Expected range")} value={`${currency.format(forecast.lowerBound)} - ${currency.format(forecast.upperBound)}`} detail={t("Volatility-adjusted")} />
         <ForecastMetric label={t("Confidence")} value={`${forecast.confidence}%`} detail={t("Model confidence, not certainty")} />
@@ -70,7 +78,7 @@ export function BitcoinForecastDashboard() {
       <section className="weekly-forecast panel">
         <div>
           <p className="panel__eyebrow">{t("7-day forecast")}</p>
-          <h2>{t("Expected BTC close in one week")}</h2>
+          <h2>{t("Expected {asset} close in one week", { asset: assetSymbol })}</h2>
           <p>{t("Uses longer trend weighting and a wider volatility range than the next-day estimate.")}</p>
         </div>
         <div className={`weekly-forecast__bias weekly-forecast__bias--${forecast.weeklyForecast.direction.toLowerCase()}`}>

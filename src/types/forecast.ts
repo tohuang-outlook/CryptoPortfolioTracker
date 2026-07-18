@@ -8,7 +8,10 @@ export interface BitcoinCandle {
   volume: number;
 }
 
+export type ForecastAsset = "BTC" | "ETH";
+
 export interface ForecastRecord {
+  assetSymbol?: ForecastAsset;
   horizon?: "daily" | "weekly";
   targetDate: string;
   createdAt: string;
@@ -90,6 +93,8 @@ export interface ForecastModelPerformance {
 }
 
 export interface BitcoinForecast {
+  assetSymbol: ForecastAsset;
+  assetName: string;
   asOfDate: string;
   currentClose: number;
   targetDate: string;
