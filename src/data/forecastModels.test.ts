@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildDailyEnsemble, calculateRangeCalibration, detectMarketRegime } from "./forecastModels";
+import {
+  buildDailyEnsemble,
+  calculateDerivativeAdjustment,
+  calculateRangeCalibration,
+  detectMarketRegime,
+  evaluateForecastBenchmark
+} from "./forecastModels";
 import type { BitcoinCandle } from "../types/forecast";
 
 function makeCandles(count: number): BitcoinCandle[] {
@@ -55,5 +61,26 @@ describe("daily forecast ensemble", () => {
 
     expect(calibration.observedCoverage).toBe(0);
     expect(calibration.multiplier).toBeGreaterThan(1);
+  });
+
+  it("compares the ensemble against naive and trend baselines without future candles", () => {
+    const benchmark = evaluateForecastBenchmark(makeCandles(90));
+
+    expect(benchmark.ensemble.evaluatedDays).toBeGreaterThan(0);
+    expect(benchmark.naive.evaluatedDays).toBe(benchmark.ensemble.evaluatedDays);
+    expect(benchmark.trend.evaluatedDays).toBe(benchmark.ensemble.evaluatedDays);
+  });
+
+  it("keeps derivative adjustments bounded", () => {
+    const adjustment = calculateDerivativeAdjustment({
+      fundingRate: 0.001,
+      fundingRate30DayAverage: 0.0001,
+      openInterestValue: 10_000_000_000,
+      openInterestChange7Day: 0.2,
+      asOfDate: "2026-07-19"
+    }, 0.04);
+
+    expect(adjustment).toBeGreaterThanOrEqual(-0.007);
+    expect(adjustment).toBeLessThanOrEqual(0.007);
   });
 });

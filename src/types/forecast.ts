@@ -22,6 +22,8 @@ export interface ForecastRecord {
   direction?: "Bullish" | "Bearish" | "Neutral";
   expectedReturnPercent?: number;
   modelWeights?: Partial<Record<ForecastModelId, number>>;
+  derivativeData?: DerivativeMarketData;
+  hasForecastEdge?: boolean;
 }
 
 export interface ForecastHorizon {
@@ -57,6 +59,27 @@ export interface RangeCalibration {
   multiplier: number;
 }
 
+export interface DerivativeMarketData {
+  fundingRate: number;
+  fundingRate30DayAverage: number;
+  openInterestValue: number;
+  openInterestChange7Day: number | null;
+  asOfDate: string;
+}
+
+export interface ForecastPerformance {
+  meanAbsolutePercentError: number;
+  directionalAccuracy: number;
+  evaluatedDays: number;
+}
+
+export interface ForecastBenchmark {
+  ensemble: ForecastPerformance;
+  naive: ForecastPerformance;
+  trend: ForecastPerformance;
+  hasEdge: boolean;
+}
+
 export interface ForecastModelPerformance {
   id: ForecastModelId;
   label: string;
@@ -81,6 +104,8 @@ export interface BitcoinForecast {
   modelLeaderboard: ForecastModelPerformance[];
   marketRegime: MarketRegime;
   rangeCalibration: RangeCalibration;
+  derivatives: DerivativeMarketData | null;
+  benchmark: ForecastBenchmark;
   records: ForecastRecord[];
   accuracy: {
     settledCount: number;

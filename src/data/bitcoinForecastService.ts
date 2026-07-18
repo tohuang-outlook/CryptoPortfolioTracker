@@ -8,12 +8,15 @@ import type {
 import {
   average,
   buildDailyEnsemble,
+  calculateDerivativeAdjustment,
   calculateRangeCalibration,
   calculateEma,
   calculateRsi,
   calculateVolatility,
-  clamp
+  clamp,
+  evaluateForecastBenchmark
 } from "./forecastModels";
+import { applyOpenInterestHistory, fetchBitcoinDerivatives } from "./derivativesService";
 
 const COINBASE_BTC_CANDLES_URL =
   "https://api.exchange.coinbase.com/products/BTC-USD/candles";
@@ -23,9 +26,12 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 type CoinbaseCandle = [number, number, number, number, number, number];
 
 export async function fetchBitcoinForecast(): Promise<BitcoinForecast> {
-  const candles = await fetchBitcoinDailyCandles();
+  const [candles, derivatives] = await Promise.all([
+    fetchBitcoinDailyCandles(),
+    fetchBitcoinDerivatives()
+  ]);
   const records = reconcileForecastRecords(await readForecastRecords(), candles);
-  const forecast = buildForecast(candles, records);
+  const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records));
   const nextRecords = upsertForecastRecords(records, forecast);
 
   await saveForecastRecords(nextRecords);
@@ -99,7 +105,8 @@ function readCoinbaseCandle(value: unknown): BitcoinCandle | null {
 
 function buildForecast(
   candles: BitcoinCandle[],
-  records: ForecastRecord[]
+  records: ForecastRecord[],
+  derivatives: BitcoinForecast["derivatives"]
 ): Omit<BitcoinForecast, "records" | "accuracy" | "weeklyAccuracy"> {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
@@ -119,10 +126,11 @@ function buildForecast(
     volumeRatio
   );
   const ensemble = buildDailyEnsemble(candles);
+  const benchmark = evaluateForecastBenchmark(candles);
   const rangeCalibration = calculateRangeCalibration(records, "daily");
   const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
-    ensemble.expectedReturn + correction,
+    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + correction,
     -0.12,
     0.12
   );
@@ -137,7 +145,7 @@ function buildForecast(
         volatility * 450 -
         Math.abs(rsi14 - 50) * 0.28 +
         calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio) -
-        calibrationPenalty,
+        calibrationPenalty + (benchmark.hasEdge ? 0 : 12),
       38,
       78
     )
@@ -184,6 +192,16 @@ function buildForecast(
       detail: getVolumeDetail(latestDailyReturn, volumeRatio)
     },
     {
+      label: "Derivatives positioning",
+      value: derivatives ? `${(derivatives.fundingRate * 100).toFixed(3)}% funding` : "Unavailable",
+      direction: derivatives && derivatives.fundingRate > derivatives.fundingRate30DayAverage * 1.5 ? "negative" : derivatives && derivatives.fundingRate < 0 ? "positive" : "neutral",
+      detail: derivatives
+        ? derivatives.openInterestChange7Day === null
+          ? "Funding is available; open-interest history is still building."
+          : `Open interest changed ${(derivatives.openInterestChange7Day * 100).toFixed(1)}% over 7 days.`
+        : "Derivative data is temporarily unavailable, so this signal has no weight."
+    },
+    {
       label: "Market regime",
       value: ensemble.marketRegime.label,
       direction: ensemble.marketRegime.id === "uptrend" ? "positive" : ensemble.marketRegime.id === "downtrend" ? "negative" : "neutral",
@@ -219,7 +237,9 @@ function buildForecast(
     signals,
     modelLeaderboard: ensemble.leaderboard,
     marketRegime: ensemble.marketRegime,
-    rangeCalibration
+    rangeCalibration,
+    derivatives,
+    benchmark
   };
 }
 
@@ -253,7 +273,9 @@ function upsertForecastRecords(
     expectedReturnPercent: forecast.expectedReturnPercent,
     modelWeights: Object.fromEntries(
       forecast.modelLeaderboard.map((model) => [model.id, model.weight])
-    )
+    ),
+    derivativeData: forecast.derivatives ?? undefined,
+    hasForecastEdge: forecast.benchmark.hasEdge
   };
   const weeklyRecord: ForecastRecord = {
     horizon: "weekly",

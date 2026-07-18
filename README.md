@@ -74,3 +74,7 @@ The ensemble also classifies the current market as an uptrend, downtrend, range-
 ## Forecast Journal And Notifications
 
 Every daily forecast records its market regime, direction, expected return, and ensemble weights in the Forecast Journal. The packaged Mac app also sends a native notification when the market regime or forecast direction changes, forecast confidence moves by at least 15 percentage points, or a newly settled close finishes outside its forecast range. These checks run with the existing hourly macOS background task.
+
+## Derivatives And Benchmark Gate
+
+The forecast reads public BTC perpetual funding-rate and open-interest data from OKX. Funding can add a small contrarian adjustment when positioning becomes unusually crowded; open-interest changes are calculated from the app's own seven-day Journal snapshots. If this public data is unavailable, the price-only ensemble remains active. The confidence score is reduced unless the ensemble's walk-forward error and directional accuracy exceed both a no-change and simple-trend baseline.

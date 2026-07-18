@@ -1,5 +1,7 @@
 import type {
   BitcoinCandle,
+  DerivativeMarketData,
+  ForecastBenchmark,
   ForecastModelId,
   ForecastModelPerformance,
   MarketRegime,
@@ -76,6 +78,52 @@ export function buildDailyEnsemble(candles: BitcoinCandle[]) {
   return { expectedReturn: clamp(expectedReturn, -0.12, 0.12), leaderboard, marketRegime };
 }
 
+export function evaluateForecastBenchmark(candles: BitcoinCandle[]): ForecastBenchmark {
+  const startIndex = Math.max(MINIMUM_HISTORY + 12, candles.length - BACKTEST_WINDOW - 1);
+  const ensembleOutcomes: ForecastOutcome[] = [];
+  const naiveOutcomes: ForecastOutcome[] = [];
+  const trendOutcomes: ForecastOutcome[] = [];
+
+  for (let index = startIndex; index < candles.length - 1; index += 1) {
+    const history = candles.slice(0, index + 1);
+    const baseClose = history[history.length - 1].close;
+    const weights = backtestModels(history, detectMarketRegime(history).id);
+    const ensembleReturn = models.reduce(
+      (sum, model) => sum + model.predictReturn(history) * weights.find((item) => item.id === model.id)!.weight,
+      0
+    );
+    const actualClose = candles[index + 1].close;
+    ensembleOutcomes.push(makeOutcome(baseClose, baseClose * (1 + ensembleReturn), actualClose));
+    naiveOutcomes.push(makeOutcome(baseClose, baseClose, actualClose));
+    trendOutcomes.push(makeOutcome(baseClose, baseClose * (1 + models[1].predictReturn(history)), actualClose));
+  }
+
+  const ensemble = summarizeOutcomes(ensembleOutcomes);
+  const naive = summarizeOutcomes(naiveOutcomes);
+  const trend = summarizeOutcomes(trendOutcomes);
+  const bestBaseline = naive.meanAbsolutePercentError <= trend.meanAbsolutePercentError ? naive : trend;
+
+  return {
+    ensemble,
+    naive,
+    trend,
+    hasEdge: ensemble.meanAbsolutePercentError < bestBaseline.meanAbsolutePercentError &&
+      ensemble.directionalAccuracy >= bestBaseline.directionalAccuracy
+  };
+}
+
+export function calculateDerivativeAdjustment(data: DerivativeMarketData | null, priceTrend: number) {
+  if (!data) return 0;
+
+  const fundingSpread = data.fundingRate - data.fundingRate30DayAverage;
+  const fundingAdjustment = fundingSpread > 0.00035 ? -0.004 : fundingSpread < -0.00025 ? 0.003 : 0;
+  const openInterestAdjustment = data.openInterestChange7Day !== null && Math.abs(data.openInterestChange7Day) >= 0.08
+    ? Math.sign(priceTrend) * Math.sign(data.openInterestChange7Day) * 0.003
+    : 0;
+
+  return clamp(fundingAdjustment + openInterestAdjustment, -0.007, 0.007);
+}
+
 function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId): ForecastModelPerformance[] {
   const startIndex = Math.max(MINIMUM_HISTORY - 1, candles.length - BACKTEST_WINDOW - 1);
   const samples = models.map((model) => {
@@ -119,6 +167,23 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId):
       evaluatedDays: sample.evaluatedDays
     }))
     .sort((left, right) => right.weight - left.weight);
+}
+
+type ForecastOutcome = { absoluteError: number; correctDirection: boolean };
+
+function makeOutcome(baseClose: number, predictedClose: number, actualClose: number): ForecastOutcome {
+  return {
+    absoluteError: Math.abs(actualClose - predictedClose) / actualClose,
+    correctDirection: Math.sign(predictedClose - baseClose) === Math.sign(actualClose - baseClose)
+  };
+}
+
+function summarizeOutcomes(outcomes: ForecastOutcome[]) {
+  return {
+    meanAbsolutePercentError: average(outcomes.map((outcome) => outcome.absoluteError)) * 100,
+    directionalAccuracy: outcomes.filter((outcome) => outcome.correctDirection).length / outcomes.length * 100,
+    evaluatedDays: outcomes.length
+  };
 }
 
 export function detectMarketRegime(candles: BitcoinCandle[]): MarketRegime {

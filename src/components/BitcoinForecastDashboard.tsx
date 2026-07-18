@@ -97,6 +97,26 @@ export function BitcoinForecastDashboard() {
             })}</p>
           <span className="forecast-status-card__tag">{t("{count} settled forecasts", { count: forecast.rangeCalibration.settledCount })}</span>
         </article>
+        <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Derivatives positioning")}</p>
+          <h2>{forecast.derivatives ? `${(forecast.derivatives.fundingRate * 100).toFixed(3)}%` : t("Unavailable")}</h2>
+          <p>{forecast.derivatives
+            ? forecast.derivatives.openInterestChange7Day === null
+              ? t("Funding rate is available; open-interest history is still building.")
+              : t("Open interest changed {change} over 7 days.", { change: `${(forecast.derivatives.openInterestChange7Day * 100).toFixed(1)}%` })
+            : t("Funding rate and open interest are temporarily unavailable. The price-only ensemble remains active.")}</p>
+          <span className="forecast-status-card__tag">{forecast.derivatives ? `${t("Open interest")}: ${formatBillions(forecast.derivatives.openInterestValue)}` : t("No derivatives weight")}</span>
+        </article>
+        <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Forecast edge gate")}</p>
+          <h2>{forecast.benchmark.hasEdge ? t("Edge established") : t("No edge established")}</h2>
+          <p>{t("Ensemble error {ensemble} vs best baseline {baseline} across {days} walk-forward days.", {
+            ensemble: `${forecast.benchmark.ensemble.meanAbsolutePercentError.toFixed(2)}%`,
+            baseline: `${Math.min(forecast.benchmark.naive.meanAbsolutePercentError, forecast.benchmark.trend.meanAbsolutePercentError).toFixed(2)}%`,
+            days: forecast.benchmark.ensemble.evaluatedDays
+          })}</p>
+          <span className="forecast-status-card__tag">{forecast.benchmark.hasEdge ? t("Full confidence allowed") : t("Confidence reduced until proven")}</span>
+        </article>
       </section>
 
       <article className="panel forecast-panel">
@@ -248,4 +268,8 @@ function formatWeights(record: { modelWeights?: Partial<Record<"technical" | "tr
     .sort(([, left], [, right]) => (right ?? 0) - (left ?? 0))
     .map(([id, weight]) => `${t(names[id as keyof typeof names])} ${(weight! * 100).toFixed(0)}%`)
     .join(" · ");
+}
+
+function formatBillions(value: number) {
+  return `$${(value / 1_000_000_000).toFixed(1)}B`;
 }
