@@ -152,9 +152,16 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId):
     };
   });
   const regimeMultipliers = getRegimeMultipliers(activeRegime);
-  const scores = samples.map((sample) =>
-    regimeMultipliers[sample.id] / Math.max(sample.meanAbsolutePercentError, 0.05) * (0.8 + sample.directionalAccuracy / 250)
-  );
+  const averageError = average(samples.map((sample) => sample.meanAbsolutePercentError));
+  const statuses = samples.map((sample) => {
+    if (sample.directionalAccuracy < 35 && sample.meanAbsolutePercentError > averageError * 1.35) return "paused" as const;
+    if (sample.directionalAccuracy < 42 && sample.meanAbsolutePercentError > averageError * 1.15) return "reduced" as const;
+    return "active" as const;
+  });
+  const scores = samples.map((sample, index) => {
+    const statusMultiplier = statuses[index] === "paused" ? 0 : statuses[index] === "reduced" ? 0.35 : 1;
+    return regimeMultipliers[sample.id] / Math.max(sample.meanAbsolutePercentError, 0.05) * (0.8 + sample.directionalAccuracy / 250) * statusMultiplier;
+  });
   const totalScore = average(scores) * scores.length;
 
   return samples
@@ -164,7 +171,8 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId):
       meanAbsolutePercentError: sample.meanAbsolutePercentError,
       directionalAccuracy: sample.directionalAccuracy,
       weight: scores[index] / totalScore,
-      evaluatedDays: sample.evaluatedDays
+      evaluatedDays: sample.evaluatedDays,
+      status: statuses[index]
     }))
     .sort((left, right) => right.weight - left.weight);
 }

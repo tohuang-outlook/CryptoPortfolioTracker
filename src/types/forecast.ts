@@ -26,6 +26,7 @@ export interface ForecastRecord {
   expectedReturnPercent?: number;
   modelWeights?: Partial<Record<ForecastModelId, number>>;
   derivativeData?: DerivativeMarketData;
+  onChainData?: OnChainMarketData;
   hasForecastEdge?: boolean;
 }
 
@@ -70,6 +71,15 @@ export interface DerivativeMarketData {
   asOfDate: string;
 }
 
+export interface OnChainMarketData {
+  activeAddresses: number;
+  transactionCount: number;
+  totalFeesNative: number;
+  activeAddressesChange7Day: number;
+  transactionCountChange7Day: number;
+  asOfDate: string;
+}
+
 export interface ForecastPerformance {
   meanAbsolutePercentError: number;
   directionalAccuracy: number;
@@ -90,6 +100,7 @@ export interface ForecastModelPerformance {
   directionalAccuracy: number;
   weight: number;
   evaluatedDays: number;
+  status: "active" | "reduced" | "paused";
 }
 
 export interface BitcoinForecast {
@@ -110,6 +121,7 @@ export interface BitcoinForecast {
   marketRegime: MarketRegime;
   rangeCalibration: RangeCalibration;
   derivatives: DerivativeMarketData | null;
+  onChain: OnChainMarketData | null;
   benchmark: ForecastBenchmark;
   records: ForecastRecord[];
   accuracy: {

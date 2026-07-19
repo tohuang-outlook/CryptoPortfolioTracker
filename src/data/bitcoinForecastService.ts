@@ -18,6 +18,7 @@ import {
   evaluateForecastBenchmark
 } from "./forecastModels";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "./derivativesService";
+import { calculateOnChainAdjustment, fetchOnChainMetrics } from "./onChainService";
 
 const COINBASE_CANDLES_URL = "https://api.exchange.coinbase.com/products";
 const FORECAST_STORAGE_KEY = "crypto-portfolio-tracker-forecast-records-v2";
@@ -31,13 +32,14 @@ const forecastAssets: Record<ForecastAsset, { name: string }> = {
 type CoinbaseCandle = [number, number, number, number, number, number];
 
 export async function fetchAssetForecast(assetSymbol: ForecastAsset = "BTC"): Promise<BitcoinForecast> {
-  const [candles, derivatives] = await Promise.all([
+  const [candles, derivatives, onChain] = await Promise.all([
     fetchAssetDailyCandles(assetSymbol),
-    fetchAssetDerivatives(assetSymbol)
+    fetchAssetDerivatives(assetSymbol),
+    fetchOnChainMetrics(assetSymbol)
   ]);
   const allRecords = await readAllForecastRecords();
   const records = reconcileForecastRecords(recordsForAsset(allRecords, assetSymbol), candles);
-  const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records));
+  const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records), onChain);
   const nextRecords = upsertForecastRecords(records, forecast, assetSymbol);
 
   await saveForecastRecords(assetSymbol, nextRecords, allRecords);
@@ -119,6 +121,7 @@ function buildForecast(
   candles: BitcoinCandle[],
   records: ForecastRecord[],
   derivatives: BitcoinForecast["derivatives"]
+  , onChain: BitcoinForecast["onChain"]
 ): Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy"> {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
@@ -142,7 +145,7 @@ function buildForecast(
   const rangeCalibration = calculateRangeCalibration(records, "daily");
   const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
-    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + correction,
+    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + calculateOnChainAdjustment(onChain) + correction,
     -0.12,
     0.12
   );
@@ -214,6 +217,14 @@ function buildForecast(
         : "Derivative data is temporarily unavailable, so this signal has no weight."
     },
     {
+      label: "On-chain activity",
+      value: onChain ? `${(onChain.activeAddressesChange7Day * 100).toFixed(1)}% active addresses` : "Unavailable",
+      direction: onChain && onChain.activeAddressesChange7Day > 0.05 && onChain.transactionCountChange7Day > 0 ? "positive" : onChain && onChain.activeAddressesChange7Day < -0.05 && onChain.transactionCountChange7Day < 0 ? "negative" : "neutral",
+      detail: onChain
+        ? `Active addresses changed ${(onChain.activeAddressesChange7Day * 100).toFixed(1)}% and transactions changed ${(onChain.transactionCountChange7Day * 100).toFixed(1)}% versus the prior 7-day average.`
+        : "On-chain activity is temporarily unavailable, so it has no weight."
+    },
+    {
       label: "Market regime",
       value: ensemble.marketRegime.label,
       direction: ensemble.marketRegime.id === "uptrend" ? "positive" : ensemble.marketRegime.id === "downtrend" ? "negative" : "neutral",
@@ -251,6 +262,7 @@ function buildForecast(
     marketRegime: ensemble.marketRegime,
     rangeCalibration,
     derivatives,
+    onChain,
     benchmark
   };
 }
@@ -289,6 +301,7 @@ function upsertForecastRecords(
       forecast.modelLeaderboard.map((model) => [model.id, model.weight])
     ),
     derivativeData: forecast.derivatives ?? undefined,
+    onChainData: forecast.onChain ?? undefined,
     hasForecastEdge: forecast.benchmark.hasEdge
   };
   const weeklyRecord: ForecastRecord = {

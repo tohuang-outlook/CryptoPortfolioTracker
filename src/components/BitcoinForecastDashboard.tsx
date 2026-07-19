@@ -242,7 +242,7 @@ export function BitcoinForecastDashboard() {
           </div>
           {forecast.modelLeaderboard.map((model) => (
             <div className="model-leaderboard__row" role="row" key={model.id}>
-              <strong role="cell">{t(model.label)}</strong>
+              <strong role="cell">{t(model.label)}<small className={`model-leaderboard__status model-leaderboard__status--${model.status}`}>{t(model.status)}</small></strong>
               <span role="cell"><b>{(model.weight * 100).toFixed(0)}%</b></span>
               <span role="cell">{model.meanAbsolutePercentError.toFixed(2)}%</span>
               <span role="cell">{model.directionalAccuracy.toFixed(0)}%</span>
