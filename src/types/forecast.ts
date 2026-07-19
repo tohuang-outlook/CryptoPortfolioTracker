@@ -30,6 +30,21 @@ export interface ForecastRecord {
   hasForecastEdge?: boolean;
 }
 
+export interface MacroEventRisk {
+  eventName: string;
+  eventDate: string;
+  daysUntil: number;
+  confidencePenalty: number;
+  rangeMultiplier: number;
+}
+
+export interface ConfidenceCalibrationBand {
+  label: string;
+  settledCount: number;
+  averageConfidence: number;
+  rangeHitRate: number | null;
+}
+
 export interface ForecastHorizon {
   targetDate: string;
   predictedClose: number;
@@ -122,6 +137,8 @@ export interface BitcoinForecast {
   rangeCalibration: RangeCalibration;
   derivatives: DerivativeMarketData | null;
   onChain: OnChainMarketData | null;
+  macroRisk: MacroEventRisk | null;
+  confidenceCalibration: ConfidenceCalibrationBand[];
   benchmark: ForecastBenchmark;
   records: ForecastRecord[];
   accuracy: {

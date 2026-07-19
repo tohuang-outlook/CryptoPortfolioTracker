@@ -19,6 +19,7 @@ import {
 } from "./forecastModels";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "./derivativesService";
 import { calculateOnChainAdjustment, fetchOnChainMetrics } from "./onChainService";
+import { getMacroEventRisk } from "./macroEventService";
 
 const COINBASE_CANDLES_URL = "https://api.exchange.coinbase.com/products";
 const FORECAST_STORAGE_KEY = "crypto-portfolio-tracker-forecast-records-v2";
@@ -50,7 +51,8 @@ export async function fetchAssetForecast(assetSymbol: ForecastAsset = "BTC"): Pr
     assetName: forecastAssets[assetSymbol].name,
     records: nextRecords,
     accuracy: calculateAccuracy(nextRecords, "daily"),
-    weeklyAccuracy: calculateAccuracy(nextRecords, "weekly")
+    weeklyAccuracy: calculateAccuracy(nextRecords, "weekly"),
+    confidenceCalibration: calculateConfidenceCalibration(nextRecords)
   };
 }
 
@@ -122,7 +124,7 @@ function buildForecast(
   records: ForecastRecord[],
   derivatives: BitcoinForecast["derivatives"]
   , onChain: BitcoinForecast["onChain"]
-): Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy"> {
+): Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy" | "confidenceCalibration"> {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
   const currentClose = closes[closes.length - 1];
@@ -142,6 +144,7 @@ function buildForecast(
   );
   const ensemble = buildDailyEnsemble(candles);
   const benchmark = evaluateForecastBenchmark(candles);
+  const latestCandle = candles[candles.length - 1];
   const rangeCalibration = calculateRangeCalibration(records, "daily");
   const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
@@ -150,7 +153,9 @@ function buildForecast(
     0.12
   );
   const predictedClose = currentClose * (1 + expectedReturn);
-  const rangePercent = clamp(volatility * 1.6 * rangeCalibration.multiplier, 0.025, 0.16);
+  const asOfDate = latestCandle.date;
+  const macroRisk = getMacroEventRisk(asOfDate);
+  const rangePercent = clamp(volatility * 1.6 * rangeCalibration.multiplier * (macroRisk?.rangeMultiplier ?? 1), 0.025, 0.2);
   const calibrationPenalty = rangeCalibration.observedCoverage === null
     ? 0
     : Math.abs(rangeCalibration.observedCoverage - rangeCalibration.targetCoverage) * 30;
@@ -160,13 +165,11 @@ function buildForecast(
         volatility * 450 -
         Math.abs(rsi14 - 50) * 0.28 +
         calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio) -
-        calibrationPenalty + (benchmark.hasEdge ? 0 : 12),
+        calibrationPenalty + (benchmark.hasEdge ? 0 : 12) - (macroRisk?.confidencePenalty ?? 0),
       38,
       78
     )
   );
-  const latestCandle = candles[candles.length - 1];
-  const asOfDate = latestCandle.date;
   const targetDate = new Date(
     latestCandle.timestamp + DAY_IN_MS
   ).toISOString().slice(0, 10);
@@ -263,6 +266,7 @@ function buildForecast(
     rangeCalibration,
     derivatives,
     onChain,
+    macroRisk,
     benchmark
   };
 }
@@ -281,7 +285,7 @@ function reconcileForecastRecords(
 
 function upsertForecastRecords(
   records: ForecastRecord[],
-  forecast: Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy">,
+  forecast: Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy" | "confidenceCalibration">,
   assetSymbol: ForecastAsset
 ): ForecastRecord[] {
   const dailyRecord: ForecastRecord = {
@@ -422,6 +426,18 @@ function calculateAccuracy(
     meanAbsolutePercentError: average(absoluteErrors) * 100,
     directionalAccuracy: (correctDirections / settled.length) * 100
   };
+}
+
+function calculateConfidenceCalibration(records: ForecastRecord[]): BitcoinForecast["confidenceCalibration"] {
+  return [[40, 54], [55, 64], [65, 74], [75, 100]].map(([min, max]) => {
+    const settled = records.filter((record) => getRecordHorizon(record) === "daily" && record.actualClose !== undefined && record.confidence >= min && record.confidence <= max);
+    return {
+      label: `${min}-${max}%`,
+      settledCount: settled.length,
+      averageConfidence: settled.length ? average(settled.map((record) => record.confidence)) : 0,
+      rangeHitRate: settled.length ? settled.filter((record) => record.actualClose! >= record.lowerBound && record.actualClose! <= record.upperBound).length / settled.length : null
+    };
+  });
 }
 
 function buildWeeklyForecast({

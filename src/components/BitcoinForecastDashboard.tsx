@@ -121,6 +121,14 @@ export function BitcoinForecastDashboard() {
 
       <section className="forecast-status-grid">
         <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Macro event risk")}</p>
+          <h2>{forecast.macroRisk ? t("Cautious") : t("Clear")}</h2>
+          <p>{forecast.macroRisk
+            ? t("{event} is in {days} day(s). Confidence is reduced and the price range is widened.", { event: forecast.macroRisk.eventName, days: forecast.macroRisk.daysUntil })
+            : t("No scheduled CPI, employment, or FOMC event is within the next three days.")}</p>
+          <span className="forecast-status-card__tag">{forecast.macroRisk ? forecast.macroRisk.eventDate : t("Normal range")}</span>
+        </article>
+        <article className="panel forecast-status-card">
           <p className="panel__eyebrow">{t("Market regime")}</p>
           <h2>{t(forecast.marketRegime.label)}</h2>
           <p>{t(forecast.marketRegime.detail)}</p>
@@ -158,6 +166,14 @@ export function BitcoinForecastDashboard() {
           <span className="forecast-status-card__tag">{forecast.benchmark.hasEdge ? t("Full confidence allowed") : t("Confidence reduced until proven")}</span>
         </article>
       </section>
+
+      <article className="panel forecast-panel">
+        <div className="panel__header"><div><p className="panel__eyebrow">{t("Confidence calibration")}</p><h2>{t("Does confidence match outcomes?")}</h2></div></div>
+        <div className="model-leaderboard" role="table">
+          <div className="model-leaderboard__header"><span>{t("Confidence band")}</span><span>{t("Average confidence")}</span><span>{t("Range hit rate")}</span><span>{t("Settled forecasts")}</span></div>
+          {forecast.confidenceCalibration.map((band) => <div className="model-leaderboard__row" role="row" key={band.label}><strong>{band.label}</strong><span>{band.settledCount ? `${band.averageConfidence.toFixed(0)}%` : "-"}</span><span>{band.rangeHitRate === null ? "-" : `${(band.rangeHitRate * 100).toFixed(0)}%`}</span><span>{band.settledCount}</span></div>)}
+        </div>
+      </article>
 
       <article className="panel forecast-panel">
         <div className="panel__header">
