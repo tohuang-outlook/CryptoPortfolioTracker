@@ -155,6 +155,7 @@ function buildForecast(
   const predictedClose = currentClose * (1 + expectedReturn);
   const asOfDate = latestCandle.date;
   const macroRisk = getMacroEventRisk(asOfDate);
+  const dataQuality = calculateDataQuality(derivatives, onChain);
   const rangePercent = clamp(volatility * 1.6 * rangeCalibration.multiplier * (macroRisk?.rangeMultiplier ?? 1), 0.025, 0.2);
   const calibrationPenalty = rangeCalibration.observedCoverage === null
     ? 0
@@ -165,7 +166,7 @@ function buildForecast(
         volatility * 450 -
         Math.abs(rsi14 - 50) * 0.28 +
         calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio) -
-        calibrationPenalty + (benchmark.hasEdge ? 0 : 12) - (macroRisk?.confidencePenalty ?? 0),
+        calibrationPenalty + (benchmark.hasEdge ? 0 : 12) - (macroRisk?.confidencePenalty ?? 0) - (100 - dataQuality.score) * 0.18,
       38,
       78
     )
@@ -267,6 +268,7 @@ function buildForecast(
     derivatives,
     onChain,
     macroRisk,
+    dataQuality,
     benchmark
   };
 }
@@ -438,6 +440,11 @@ function calculateConfidenceCalibration(records: ForecastRecord[]): BitcoinForec
       rangeHitRate: settled.length ? settled.filter((record) => record.actualClose! >= record.lowerBound && record.actualClose! <= record.upperBound).length / settled.length : null
     };
   });
+}
+
+function calculateDataQuality(derivatives: BitcoinForecast["derivatives"], onChain: BitcoinForecast["onChain"]): BitcoinForecast["dataQuality"] {
+  const missingSources = [!derivatives && "Derivatives", !onChain && "On-chain"].filter((source): source is string => Boolean(source));
+  return { score: Math.max(60, 100 - missingSources.length * 20), missingSources };
 }
 
 function buildWeeklyForecast({

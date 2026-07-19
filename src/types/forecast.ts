@@ -45,6 +45,11 @@ export interface ConfidenceCalibrationBand {
   rangeHitRate: number | null;
 }
 
+export interface ForecastDataQuality {
+  score: number;
+  missingSources: string[];
+}
+
 export interface ForecastHorizon {
   targetDate: string;
   predictedClose: number;
@@ -139,6 +144,7 @@ export interface BitcoinForecast {
   onChain: OnChainMarketData | null;
   macroRisk: MacroEventRisk | null;
   confidenceCalibration: ConfidenceCalibrationBand[];
+  dataQuality: ForecastDataQuality;
   benchmark: ForecastBenchmark;
   records: ForecastRecord[];
   accuracy: {

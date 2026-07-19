@@ -121,6 +121,12 @@ export function BitcoinForecastDashboard() {
 
       <section className="forecast-status-grid">
         <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Data quality")}</p>
+          <h2>{forecast.dataQuality.score}%</h2>
+          <p>{forecast.dataQuality.missingSources.length ? t("Missing: {sources}. Confidence was reduced.", { sources: forecast.dataQuality.missingSources.join(", ") }) : t("Price, derivatives, and on-chain inputs are available.")}</p>
+          <span className="forecast-status-card__tag">{t("Holdout validation: 14 days")}</span>
+        </article>
+        <article className="panel forecast-status-card">
           <p className="panel__eyebrow">{t("Macro event risk")}</p>
           <h2>{forecast.macroRisk ? t("Cautious") : t("Clear")}</h2>
           <p>{forecast.macroRisk

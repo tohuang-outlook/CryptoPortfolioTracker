@@ -125,11 +125,13 @@ export function calculateDerivativeAdjustment(data: DerivativeMarketData | null,
 }
 
 function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId): ForecastModelPerformance[] {
-  const startIndex = Math.max(MINIMUM_HISTORY - 1, candles.length - BACKTEST_WINDOW - 1);
+  // Reserve the newest 14 closes as a holdout set instead of fitting weights to them.
+  const trainingEnd = Math.max(MINIMUM_HISTORY + 1, candles.length - 14);
+  const startIndex = Math.max(MINIMUM_HISTORY - 1, trainingEnd - BACKTEST_WINDOW - 1);
   const samples = models.map((model) => {
     const outcomes: Array<{ absoluteError: number; correctDirection: boolean; regime: MarketRegimeId }> = [];
 
-    for (let index = startIndex; index < candles.length - 1; index += 1) {
+    for (let index = startIndex; index < trainingEnd - 1; index += 1) {
       const history = candles.slice(0, index + 1);
       const baseClose = history[history.length - 1].close;
       const predictedClose = baseClose * (1 + model.predictReturn(history));
