@@ -19,7 +19,7 @@ import type { DerivativeMarketData, ForecastAsset } from "../src/types/forecast.
 const FORECAST_FILE_NAME = "bitcoin-forecast-records.json";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const CANDLES_URL = "https://api.exchange.coinbase.com/products";
-const forecastAssets: ForecastAsset[] = ["BTC", "ETH"];
+const forecastAssets: ForecastAsset[] = ["BTC", "ETH", "ADA", "SOL", "XRP", "DOGE"];
 
 interface Candle {
   date: string;

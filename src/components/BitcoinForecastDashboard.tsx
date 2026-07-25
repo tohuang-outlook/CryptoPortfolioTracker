@@ -50,7 +50,7 @@ export function BitcoinForecastDashboard() {
   return (
     <section className="forecast-dashboard">
       <div className="forecast-asset-switcher" aria-label={t("Forecast asset")}>
-        {(["BTC", "ETH"] as const).map((symbol) => (
+        {(["BTC", "ETH", "ADA", "SOL", "XRP", "DOGE"] as const).map((symbol) => (
           <button key={symbol} type="button" className={assetSymbol === symbol ? "forecast-asset-switcher__item forecast-asset-switcher__item--active" : "forecast-asset-switcher__item"} onClick={() => setAssetSymbol(symbol)}>{symbol}</button>
         ))}
       </div>

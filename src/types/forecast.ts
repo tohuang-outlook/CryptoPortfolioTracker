@@ -8,7 +8,7 @@ export interface BitcoinCandle {
   volume: number;
 }
 
-export type ForecastAsset = "BTC" | "ETH";
+export type ForecastAsset = "BTC" | "ETH" | "ADA" | "SOL" | "XRP" | "DOGE";
 
 export interface ForecastRecord {
   assetSymbol?: ForecastAsset;

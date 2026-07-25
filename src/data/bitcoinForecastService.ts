@@ -27,7 +27,11 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const forecastAssets: Record<ForecastAsset, { name: string }> = {
   BTC: { name: "Bitcoin" },
-  ETH: { name: "Ethereum" }
+  ETH: { name: "Ethereum" },
+  ADA: { name: "Cardano" },
+  SOL: { name: "Solana" },
+  XRP: { name: "XRP" },
+  DOGE: { name: "Dogecoin" }
 };
 
 type CoinbaseCandle = [number, number, number, number, number, number];
