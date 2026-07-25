@@ -5,9 +5,12 @@ import type {
   ForecastModelId,
   ForecastModelPerformance,
   ForecastAsset,
+  ForecastDecision,
   MarketRegime,
   MarketRegimeId,
-  RangeCalibration
+  MultiTimeframeSignal,
+  RangeCalibration,
+  TimeframeAlignment
 } from "../types/forecast.js";
 
 const MINIMUM_HISTORY = 31;
@@ -293,6 +296,122 @@ export function calculateProbabilisticRange({
 export function calculateEnsembleConfidencePenalty(marketRegime: MarketRegimeId, modelDispersion: number) {
   const regimePenalty = marketRegime === "volatile" ? 9 : marketRegime === "downtrend" ? 3 : marketRegime === "uptrend" ? 1 : 0;
   return clamp(regimePenalty + modelDispersion * 220, 0, 14);
+}
+
+export function buildMultiTimeframeSignal(
+  hourlyCandles: BitcoinCandle[],
+  dailyCandles: BitcoinCandle[]
+): MultiTimeframeSignal {
+  const dailyTrend = average(dailyCandles.slice(-7).map((candle) => candle.close)) /
+    average(dailyCandles.slice(-30).map((candle) => candle.close)) - 1;
+  const fourHourCandles = aggregateCandles(hourlyCandles, 4);
+
+  if (hourlyCandles.length < 25 || fourHourCandles.length < 7) {
+    return {
+      hourlyTrend: null,
+      fourHourTrend: null,
+      dailyTrend,
+      alignment: "unavailable",
+      adjustment: 0,
+      confidenceAdjustment: -5
+    };
+  }
+
+  const hourlyTrend = hourlyCandles[hourlyCandles.length - 1].close / hourlyCandles[hourlyCandles.length - 7].close - 1;
+  const fourHourTrend = fourHourCandles[fourHourCandles.length - 1].close / fourHourCandles[fourHourCandles.length - 7].close - 1;
+  const alignment = getTimeframeAlignment(hourlyTrend, fourHourTrend, dailyTrend);
+  const rawAdjustment = hourlyTrend * 0.2 + fourHourTrend * 0.28 + dailyTrend * 0.14;
+  const adjustmentMultiplier = alignment === "bullish" || alignment === "bearish"
+    ? 1
+    : alignment === "neutral"
+      ? 0.35
+      : 0.45;
+
+  return {
+    hourlyTrend,
+    fourHourTrend,
+    dailyTrend,
+    alignment,
+    adjustment: clamp(rawAdjustment * adjustmentMultiplier, -0.01, 0.01),
+    confidenceAdjustment: alignment === "bullish" || alignment === "bearish"
+      ? 5
+      : alignment === "neutral"
+        ? 1
+        : -8
+  };
+}
+
+export function buildForecastDecision({
+  expectedReturn,
+  confidence,
+  hasForecastEdge,
+  dataQualityScore,
+  multiTimeframe
+}: {
+  expectedReturn: number;
+  confidence: number;
+  hasForecastEdge: boolean;
+  dataQualityScore: number;
+  multiTimeframe: MultiTimeframeSignal;
+}): ForecastDecision {
+  const isAligned = multiTimeframe.alignment === "bullish" || multiTimeframe.alignment === "bearish";
+  const score = Math.round(clamp(
+    confidence + (hasForecastEdge ? 9 : -24) + multiTimeframe.confidenceAdjustment + (dataQualityScore - 80) * 0.2,
+    0,
+    100
+  ));
+
+  if (hasForecastEdge && isAligned && Math.abs(expectedReturn) >= 0.0045 && score >= 68) {
+    return { status: "trade", score, detail: "Timeframes align and the ensemble has a validated edge." };
+  }
+  if (!hasForecastEdge || Math.abs(expectedReturn) < 0.0025 || score < 45) {
+    return { status: "noEdge", score, detail: "No validated edge. The dashboard remains in observation mode." };
+  }
+  return { status: "watch", score, detail: "A signal is forming, but confidence or timeframe alignment is incomplete." };
+}
+
+export function aggregateCandles(candles: BitcoinCandle[], bucketHours: number): BitcoinCandle[] {
+  const bucketMs = bucketHours * 60 * 60 * 1000;
+  const buckets = new Map<number, BitcoinCandle[]>();
+
+  for (const candle of candles) {
+    const bucket = Math.floor(candle.timestamp / bucketMs) * bucketMs;
+    const values = buckets.get(bucket) ?? [];
+    values.push(candle);
+    buckets.set(bucket, values);
+  }
+
+  return [...buckets.entries()]
+    .sort(([left], [right]) => left - right)
+    .filter(([, values]) => values.length === bucketHours)
+    .map(([timestamp, values]) => ({
+      date: new Date(timestamp).toISOString().slice(0, 10),
+      timestamp,
+      open: values[0].open,
+      high: Math.max(...values.map((candle) => candle.high)),
+      low: Math.min(...values.map((candle) => candle.low)),
+      close: values[values.length - 1].close,
+      volume: values.reduce((sum, candle) => sum + candle.volume, 0)
+    }));
+}
+
+function getTimeframeAlignment(hourlyTrend: number, fourHourTrend: number, dailyTrend: number): TimeframeAlignment {
+  const directions = [
+    classifyTimeframeTrend(hourlyTrend, 0.0025),
+    classifyTimeframeTrend(fourHourTrend, 0.004),
+    classifyTimeframeTrend(dailyTrend, 0.006)
+  ];
+  const positive = directions.filter((direction) => direction === 1).length;
+  const negative = directions.filter((direction) => direction === -1).length;
+
+  if (positive >= 2 && negative === 0) return "bullish";
+  if (negative >= 2 && positive === 0) return "bearish";
+  if (positive === 0 && negative === 0) return "neutral";
+  return "mixed";
+}
+
+function classifyTimeframeTrend(value: number, threshold: number) {
+  return value > threshold ? 1 : value < -threshold ? -1 : 0;
 }
 
 function getRegimeMultipliers(regime: MarketRegimeId): Record<ForecastModelId, number> {

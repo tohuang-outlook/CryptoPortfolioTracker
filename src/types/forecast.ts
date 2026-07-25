@@ -28,6 +28,8 @@ export interface ForecastRecord {
   derivativeData?: DerivativeMarketData;
   onChainData?: OnChainMarketData;
   hasForecastEdge?: boolean;
+  multiTimeframe?: MultiTimeframeSignal;
+  decision?: ForecastDecision;
 }
 
 export interface MacroEventRisk {
@@ -64,6 +66,24 @@ export interface ForecastSignal {
   label: string;
   value: string;
   direction: "positive" | "negative" | "neutral";
+  detail: string;
+}
+
+export type TimeframeAlignment = "bullish" | "bearish" | "neutral" | "mixed" | "unavailable";
+export type ForecastDecisionStatus = "trade" | "watch" | "noEdge";
+
+export interface MultiTimeframeSignal {
+  hourlyTrend: number | null;
+  fourHourTrend: number | null;
+  dailyTrend: number;
+  alignment: TimeframeAlignment;
+  adjustment: number;
+  confidenceAdjustment: number;
+}
+
+export interface ForecastDecision {
+  status: ForecastDecisionStatus;
+  score: number;
   detail: string;
 }
 
@@ -135,6 +155,8 @@ export interface BitcoinForecast {
   confidence: number;
   expectedReturnPercent: number;
   direction: "Bullish" | "Bearish" | "Neutral";
+  multiTimeframe: MultiTimeframeSignal;
+  decision: ForecastDecision;
   weeklyForecast: ForecastHorizon;
   signals: ForecastSignal[];
   modelLeaderboard: ForecastModelPerformance[];

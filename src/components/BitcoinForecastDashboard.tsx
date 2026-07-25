@@ -62,10 +62,18 @@ export function BitcoinForecastDashboard() {
             {t("A transparent next-day estimate based on {asset} daily trend, momentum, volatility, and prior forecast error.", { asset: assetSymbol })}
           </p>
         </div>
-        <div className={`forecast-bias forecast-bias--${forecastDirectionClass}`}>
-          <span>{t("24h bias")}</span>
-          <strong>{t(forecast.direction)}</strong>
-          <small>{forecast.expectedReturnPercent >= 0 ? "+" : ""}{forecast.expectedReturnPercent.toFixed(2)}%</small>
+        <div className="forecast-hero__outlook">
+          <div className={`forecast-bias forecast-bias--${forecastDirectionClass}`}>
+            <span>{t("24h bias")}</span>
+            <strong>{t(forecast.direction)}</strong>
+            <small>{forecast.expectedReturnPercent >= 0 ? "+" : ""}{forecast.expectedReturnPercent.toFixed(2)}%</small>
+          </div>
+          <div className={`forecast-decision forecast-decision--${forecast.decision.status}`}>
+            <span>{t("Decision gate")}</span>
+            <strong>{t(decisionLabel(forecast.decision.status))}</strong>
+            <small>{t(forecast.decision.detail)}</small>
+            <b>{t("Quality score: {score}%", { score: forecast.decision.score })}</b>
+          </div>
         </div>
       </header>
 
@@ -148,6 +156,12 @@ export function BitcoinForecastDashboard() {
           <h2>{t(forecast.marketRegime.label)}</h2>
           <p>{t(forecast.marketRegime.detail)}</p>
           <span className={`forecast-status-card__tag forecast-status-card__tag--${forecast.marketRegime.id}`}>{t("Weights are tuned for this market state")}</span>
+        </article>
+        <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Multi-timeframe confirmation")}</p>
+          <h2>{t(timeframeAlignmentLabel(forecast.multiTimeframe.alignment))}</h2>
+          <p>{t(timeframeSignalDetail(forecast.multiTimeframe.alignment))}</p>
+          <span className="forecast-status-card__tag">{formatTimeframeTrend(forecast.multiTimeframe.hourlyTrend, "1H")} · {formatTimeframeTrend(forecast.multiTimeframe.fourHourTrend, "4H")} · {formatTimeframeTrend(forecast.multiTimeframe.dailyTrend, "1D")}</span>
         </article>
         <article className="panel forecast-status-card">
           <p className="panel__eyebrow">{t("Range calibration")}</p>
@@ -318,4 +332,26 @@ function formatWeights(record: { modelWeights?: Partial<Record<"technical" | "tr
 
 function formatBillions(value: number) {
   return `$${(value / 1_000_000_000).toFixed(1)}B`;
+}
+
+function decisionLabel(status: "trade" | "watch" | "noEdge") {
+  return { trade: "Trade", watch: "Watch", noEdge: "No edge" }[status];
+}
+
+function timeframeAlignmentLabel(alignment: "bullish" | "bearish" | "neutral" | "mixed" | "unavailable") {
+  return { bullish: "Aligned bullish", bearish: "Aligned bearish", neutral: "Neutral", mixed: "Mixed", unavailable: "Unavailable" }[alignment];
+}
+
+function timeframeSignalDetail(alignment: "bullish" | "bearish" | "neutral" | "mixed" | "unavailable") {
+  return {
+    bullish: "1H, 4H, and daily trends are confirming the same upside direction.",
+    bearish: "1H, 4H, and daily trends are confirming the same downside direction.",
+    neutral: "Short and long timeframes are close to flat.",
+    mixed: "Timeframes disagree, so the short-term contribution is reduced.",
+    unavailable: "Intraday candles are unavailable, so the daily model remains conservative."
+  }[alignment];
+}
+
+function formatTimeframeTrend(value: number | null, label: string) {
+  return value === null ? `${label} -` : `${label} ${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
 }

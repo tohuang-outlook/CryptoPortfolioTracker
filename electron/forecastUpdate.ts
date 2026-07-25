@@ -3,6 +3,8 @@ import path from "node:path";
 import {
   average,
   buildDailyEnsemble,
+  buildForecastDecision,
+  buildMultiTimeframeSignal,
   calculateDerivativeAdjustment,
   calculateProbabilisticRange,
   calculateRangeCalibration,
@@ -15,7 +17,7 @@ import {
 import { detectForecastAlerts, type ForecastAlert } from "../src/data/forecastAlerts.js";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "../src/data/derivativesService.js";
 import { calculateOnChainAdjustment, fetchOnChainMetrics } from "../src/data/onChainService.js";
-import type { DerivativeMarketData, ForecastAsset } from "../src/types/forecast.js";
+import type { DerivativeMarketData, ForecastAsset, ForecastDecision, MultiTimeframeSignal } from "../src/types/forecast.js";
 
 const FORECAST_FILE_NAME = "bitcoin-forecast-records.json";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -50,6 +52,8 @@ interface RecordItem {
   derivativeData?: DerivativeMarketData;
   onChainData?: import("../src/types/forecast.js").OnChainMarketData;
   hasForecastEdge?: boolean;
+  multiTimeframe?: MultiTimeframeSignal;
+  decision?: ForecastDecision;
 }
 
 export async function runForecastUpdate(userDataPath: string): Promise<ForecastAlert[]> {
@@ -57,13 +61,19 @@ export async function runForecastUpdate(userDataPath: string): Promise<ForecastA
   const existingRecords = await readRecords(filePath);
   let nextRecords = existingRecords;
   const alerts: ForecastAlert[] = [];
+  const [btcCandles, ethCandles] = await Promise.all([fetchDailyCandles("BTC"), fetchDailyCandles("ETH")]);
 
   for (const assetSymbol of forecastAssets) {
-    const [candles, btcCandles, ethCandles, derivatives, onChain] = await Promise.all([fetchDailyCandles(assetSymbol), fetchDailyCandles("BTC"), fetchDailyCandles("ETH"), fetchAssetDerivatives(assetSymbol), fetchOnChainMetrics(assetSymbol)]);
+    const [candles, hourlyCandles, derivatives, onChain] = await Promise.all([
+      assetSymbol === "BTC" ? Promise.resolve(btcCandles) : assetSymbol === "ETH" ? Promise.resolve(ethCandles) : fetchDailyCandles(assetSymbol),
+      fetchHourlyCandles(assetSymbol).catch(() => []),
+      fetchAssetDerivatives(assetSymbol),
+      fetchOnChainMetrics(assetSymbol)
+    ]);
     const priorAssetRecords = recordsForAsset(nextRecords, assetSymbol);
     const records = reconcileRecords(priorAssetRecords, candles);
     const newlySettled = records.filter((record, index) => record.actualClose !== undefined && priorAssetRecords[index]?.actualClose === undefined);
-    const updatedAssetRecords = upsertForecasts(records, candles, applyOpenInterestHistory(derivatives, records), onChain, calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles), assetSymbol);
+    const updatedAssetRecords = upsertForecasts(records, candles, hourlyCandles, applyOpenInterestHistory(derivatives, records), onChain, calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles), assetSymbol);
     const currentDaily = updatedAssetRecords.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1)!;
     const previousDaily = records.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1);
     alerts.push(...detectForecastAlerts(previousDaily, currentDaily, newlySettled, assetSymbol));
@@ -99,6 +109,28 @@ async function fetchDailyCandles(assetSymbol: ForecastAsset): Promise<Candle[]> 
   return candles;
 }
 
+async function fetchHourlyCandles(assetSymbol: ForecastAsset): Promise<Candle[]> {
+  const end = new Date();
+  const start = new Date(end.getTime() - 12 * DAY_IN_MS);
+  const url = new URL(`${CANDLES_URL}/${assetSymbol}-USD/candles`);
+  url.searchParams.set("start", start.toISOString());
+  url.searchParams.set("end", end.toISOString());
+  url.searchParams.set("granularity", "3600");
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Coinbase hourly candle request failed");
+
+  const data = (await response.json()) as unknown;
+  if (!Array.isArray(data)) throw new Error("Malformed Coinbase hourly candle payload");
+
+  const now = Date.now();
+  return data
+    .map(readCandle)
+    .filter((value): value is Candle => value !== null)
+    .filter((candle) => candle.timestamp + 60 * 60 * 1000 <= now)
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
+
 function readCandle(value: unknown): Candle | null {
   if (!Array.isArray(value) || value.length < 6) return null;
   const [timestamp, low, high, open, close, volume] = value;
@@ -123,7 +155,7 @@ function reconcileRecords(records: RecordItem[], candles: Candle[]) {
   }));
 }
 
-function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: DerivativeMarketData | null, onChain: RecordItem["onChainData"] | null, marketAdjustment: number, assetSymbol: ForecastAsset) {
+function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles: Candle[], derivatives: DerivativeMarketData | null, onChain: RecordItem["onChainData"] | null, marketAdjustment: number, assetSymbol: ForecastAsset) {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
   const latest = candles[candles.length - 1];
@@ -136,12 +168,13 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
   const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
   const volumeConfirmation = calculateVolumeConfirmation(dailyReturn, volumeRatio);
   const ensemble = buildDailyEnsemble(candles, assetSymbol);
+  const multiTimeframe = buildMultiTimeframeSignal(hourlyCandles, candles);
   const benchmark = evaluateForecastBenchmark(candles, assetSymbol);
   const dailyCalibration = calculateRangeCalibration(records, "daily");
   const weeklyCalibration = calculateRangeCalibration(records, "weekly");
 
   const dailyExpectedReturn = clamp(
-    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trend) + calculateOnChainAdjustment(onChain ?? null) + marketAdjustment + calculateBias(records, "daily"),
+    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trend) + calculateOnChainAdjustment(onChain ?? null) + marketAdjustment + multiTimeframe.adjustment + calculateBias(records, "daily"),
     -0.12,
     0.12
   );
@@ -151,6 +184,20 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
     0.3
   );
 
+  const dailyConfidence = Math.round(clamp(
+    72 - volatility * 450 - Math.abs(rsi - 50) * 0.28 + volumeConfidence(dailyReturn, volumeRatio) + multiTimeframe.confidenceAdjustment -
+      (dailyCalibration.observedCoverage === null ? 0 : Math.abs(dailyCalibration.observedCoverage - dailyCalibration.targetCoverage) * 30) -
+      (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty,
+    38,
+    78
+  ));
+  const decision = buildForecastDecision({
+    expectedReturn: dailyExpectedReturn,
+    confidence: dailyConfidence,
+    hasForecastEdge: benchmark.hasEdge,
+    dataQualityScore: calculateBackgroundDataQuality(derivatives, onChain, hourlyCandles.length >= 25),
+    multiTimeframe
+  });
   const dailyPrediction = makeRecord({
     assetSymbol,
     horizon: "daily",
@@ -163,20 +210,16 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
       marketRegime: ensemble.marketRegime.id,
       calibrationMultiplier: dailyCalibration.multiplier
     }),
-    confidence: Math.round(clamp(
-      72 - volatility * 450 - Math.abs(rsi - 50) * 0.28 + volumeConfidence(dailyReturn, volumeRatio) -
-        (dailyCalibration.observedCoverage === null ? 0 : Math.abs(dailyCalibration.observedCoverage - dailyCalibration.targetCoverage) * 30) -
-        (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty,
-      38,
-      78
-    )),
+    confidence: dailyConfidence,
     marketRegime: ensemble.marketRegime.id,
     direction: getDirection(dailyExpectedReturn, 0.003),
     expectedReturnPercent: dailyExpectedReturn * 100,
     modelWeights: Object.fromEntries(ensemble.leaderboard.map((model) => [model.id, model.weight])),
     derivativeData: derivatives ?? undefined,
     onChainData: onChain ?? undefined,
-    hasForecastEdge: benchmark.hasEdge
+    hasForecastEdge: benchmark.hasEdge,
+    multiTimeframe,
+    decision
   });
   const weeklyPrediction = makeRecord({
     assetSymbol,
@@ -199,7 +242,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
   return upsertRecord(upsertRecord(records, dailyPrediction), weeklyPrediction).slice(-180);
 }
 
-function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedReturn, rangePercent, confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, hasForecastEdge }: {
+function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedReturn, rangePercent, confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, hasForecastEdge, multiTimeframe, decision }: {
   assetSymbol: ForecastAsset;
   horizon: "daily" | "weekly";
   targetDate: string;
@@ -214,9 +257,11 @@ function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedRetur
   derivativeData?: RecordItem["derivativeData"];
   hasForecastEdge?: boolean;
   onChainData?: RecordItem["onChainData"];
+  multiTimeframe?: MultiTimeframeSignal;
+  decision?: ForecastDecision;
 }): RecordItem {
   const predictedClose = baseClose * (1 + expectedReturn);
-  return { assetSymbol, horizon, targetDate, createdAt: new Date().toISOString(), baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, hasForecastEdge };
+  return { assetSymbol, horizon, targetDate, createdAt: new Date().toISOString(), baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, hasForecastEdge, multiTimeframe, decision };
 }
 
 function upsertRecord(records: RecordItem[], record: RecordItem) {
@@ -242,6 +287,7 @@ function toDate(timestamp: number) { return new Date(timestamp).toISOString().sl
 function calculateVolumeConfirmation(dailyReturn: number, ratio: number) { return Math.abs(dailyReturn) < 0.002 || ratio <= 1 ? 0 : Math.sign(dailyReturn) * clamp((ratio - 1) * 0.012, 0, 0.024); }
 function volumeConfidence(dailyReturn: number, ratio: number) { if (Math.abs(dailyReturn) < 0.002) return 0; if (ratio >= 1.15) return clamp((ratio - 1) * 8, 0, 6); return ratio <= 0.8 ? -4 : 0; }
 function calculateMarketLinkAdjustment(asset: ForecastAsset, btcCandles: Candle[], ethCandles: Candle[]) { if (asset === "BTC" || btcCandles.length < 2 || ethCandles.length < 2) return 0; const btcReturn = btcCandles[btcCandles.length - 1].close / btcCandles[btcCandles.length - 2].close - 1; const ethReturn = ethCandles[ethCandles.length - 1].close / ethCandles[ethCandles.length - 2].close - 1; return clamp(asset === "ETH" ? btcReturn * .15 : btcReturn * .32 + (ethReturn - btcReturn) * .18, -.012, .012); }
+function calculateBackgroundDataQuality(derivatives: DerivativeMarketData | null, onChain: RecordItem["onChainData"] | null, hasIntradayData: boolean) { return Math.max(50, 100 - [!derivatives, !onChain, !hasIntradayData].filter(Boolean).length * 16); }
 
 async function readRecords(filePath: string): Promise<RecordItem[]> {
   try {

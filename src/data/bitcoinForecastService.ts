@@ -9,6 +9,8 @@ import type {
 import {
   average,
   buildDailyEnsemble,
+  buildForecastDecision,
+  buildMultiTimeframeSignal,
   calculateDerivativeAdjustment,
   calculateProbabilisticRange,
   calculateRangeCalibration,
@@ -38,16 +40,17 @@ const forecastAssets: Record<ForecastAsset, { name: string }> = {
 type CoinbaseCandle = [number, number, number, number, number, number];
 
 export async function fetchAssetForecast(assetSymbol: ForecastAsset = "BTC"): Promise<BitcoinForecast> {
-  const [candles, btcCandles, ethCandles, derivatives, onChain] = await Promise.all([
+  const [candles, btcCandles, ethCandles, hourlyCandles, derivatives, onChain] = await Promise.all([
     fetchAssetDailyCandles(assetSymbol),
     fetchAssetDailyCandles("BTC"),
     fetchAssetDailyCandles("ETH"),
+    fetchAssetHourlyCandles(assetSymbol).catch(() => []),
     fetchAssetDerivatives(assetSymbol),
     fetchOnChainMetrics(assetSymbol)
   ]);
   const allRecords = await readAllForecastRecords();
   const records = reconcileForecastRecords(recordsForAsset(allRecords, assetSymbol), candles);
-  const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records), onChain, assetSymbol, btcCandles, ethCandles);
+  const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records), onChain, assetSymbol, btcCandles, ethCandles, hourlyCandles);
   const nextRecords = upsertForecastRecords(records, forecast, assetSymbol);
 
   await saveForecastRecords(assetSymbol, nextRecords, allRecords);
@@ -103,6 +106,29 @@ async function fetchAssetDailyCandles(assetSymbol: ForecastAsset): Promise<Bitco
   return candles;
 }
 
+async function fetchAssetHourlyCandles(assetSymbol: ForecastAsset): Promise<BitcoinCandle[]> {
+  const end = new Date();
+  const start = new Date(end.getTime() - 12 * DAY_IN_MS);
+  const url = new URL(`${COINBASE_CANDLES_URL}/${assetSymbol}-USD/candles`);
+  url.searchParams.set("start", start.toISOString());
+  url.searchParams.set("end", end.toISOString());
+  url.searchParams.set("granularity", "3600");
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Unable to fetch ${assetSymbol} hourly candles`);
+
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) throw new Error(`Malformed ${assetSymbol} hourly candle payload`);
+
+  const now = Date.now();
+  return payload
+    .map(readCoinbaseCandle)
+    .filter((candle): candle is BitcoinCandle => candle !== null)
+    // The active hourly candle is incomplete and must not influence a close forecast.
+    .filter((candle) => candle.timestamp + 60 * 60 * 1000 <= now)
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
+
 function readCoinbaseCandle(value: unknown): BitcoinCandle | null {
   if (!Array.isArray(value) || value.length < 6) {
     return null;
@@ -130,7 +156,7 @@ function buildForecast(
   candles: BitcoinCandle[],
   records: ForecastRecord[],
   derivatives: BitcoinForecast["derivatives"]
-  , onChain: BitcoinForecast["onChain"], assetSymbol: ForecastAsset, btcCandles: BitcoinCandle[], ethCandles: BitcoinCandle[]
+  , onChain: BitcoinForecast["onChain"], assetSymbol: ForecastAsset, btcCandles: BitcoinCandle[], ethCandles: BitcoinCandle[], hourlyCandles: BitcoinCandle[]
 ): Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy" | "confidenceCalibration"> {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
@@ -150,19 +176,20 @@ function buildForecast(
     volumeRatio
   );
   const ensemble = buildDailyEnsemble(candles, assetSymbol);
+  const multiTimeframe = buildMultiTimeframeSignal(hourlyCandles, candles);
   const benchmark = evaluateForecastBenchmark(candles, assetSymbol);
   const latestCandle = candles[candles.length - 1];
   const rangeCalibration = calculateRangeCalibration(records, "daily");
   const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
-    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + calculateOnChainAdjustment(onChain) + calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles) + correction,
+    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + calculateOnChainAdjustment(onChain) + calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles) + multiTimeframe.adjustment + correction,
     -0.12,
     0.12
   );
   const predictedClose = currentClose * (1 + expectedReturn);
   const asOfDate = latestCandle.date;
   const macroRisk = getMacroEventRisk(asOfDate);
-  const dataQuality = calculateDataQuality(derivatives, onChain);
+  const dataQuality = calculateDataQuality(derivatives, onChain, hourlyCandles.length >= 25);
   const rangePercent = calculateProbabilisticRange({
     volatility,
     modelDispersion: ensemble.modelDispersion,
@@ -179,7 +206,7 @@ function buildForecast(
         volatility * 450 -
         Math.abs(rsi14 - 50) * 0.28 +
         calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio) -
-        calibrationPenalty + (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty - (macroRisk?.confidencePenalty ?? 0) - (100 - dataQuality.score) * 0.18,
+        calibrationPenalty + (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty + multiTimeframe.confidenceAdjustment - (macroRisk?.confidencePenalty ?? 0) - (100 - dataQuality.score) * 0.18,
       38,
       78
     )
@@ -188,6 +215,13 @@ function buildForecast(
     latestCandle.timestamp + DAY_IN_MS
   ).toISOString().slice(0, 10);
   const direction = expectedReturn > 0.003 ? "Bullish" : expectedReturn < -0.003 ? "Bearish" : "Neutral";
+  const decision = buildForecastDecision({
+    expectedReturn,
+    confidence,
+    hasForecastEdge: benchmark.hasEdge,
+    dataQualityScore: dataQuality.score,
+    multiTimeframe
+  });
   const weeklyForecast = buildWeeklyForecast({
     latestCandle,
     trendPercent,
@@ -254,6 +288,12 @@ function buildForecast(
       detail: ensemble.marketRegime.detail
     },
     {
+      label: "Multi-timeframe alignment",
+      value: formatTimeframeAlignment(multiTimeframe.alignment),
+      direction: multiTimeframe.alignment === "bullish" ? "positive" : multiTimeframe.alignment === "bearish" || multiTimeframe.alignment === "mixed" ? "negative" : "neutral",
+      detail: timeframeSignalDetail(multiTimeframe.alignment)
+    },
+    {
       label: "Forecast range",
       value: `±${(rangePercent * 100).toFixed(1)}%`,
       direction: ensemble.marketRegime.id === "volatile" ? "negative" : "neutral",
@@ -285,6 +325,8 @@ function buildForecast(
     confidence,
     expectedReturnPercent: expectedReturn * 100,
     direction,
+    multiTimeframe,
+    decision,
     weeklyForecast,
     signals,
     modelLeaderboard: ensemble.leaderboard,
@@ -333,7 +375,9 @@ function upsertForecastRecords(
     ),
     derivativeData: forecast.derivatives ?? undefined,
     onChainData: forecast.onChain ?? undefined,
-    hasForecastEdge: forecast.benchmark.hasEdge
+    hasForecastEdge: forecast.benchmark.hasEdge,
+    multiTimeframe: forecast.multiTimeframe,
+    decision: forecast.decision
   };
   const weeklyRecord: ForecastRecord = {
     assetSymbol,
@@ -467,9 +511,23 @@ function calculateConfidenceCalibration(records: ForecastRecord[]): BitcoinForec
   });
 }
 
-function calculateDataQuality(derivatives: BitcoinForecast["derivatives"], onChain: BitcoinForecast["onChain"]): BitcoinForecast["dataQuality"] {
-  const missingSources = [!derivatives && "Derivatives", !onChain && "On-chain"].filter((source): source is string => Boolean(source));
-  return { score: Math.max(60, 100 - missingSources.length * 20), missingSources };
+function calculateDataQuality(derivatives: BitcoinForecast["derivatives"], onChain: BitcoinForecast["onChain"], hasIntradayData: boolean): BitcoinForecast["dataQuality"] {
+  const missingSources = [!derivatives && "Derivatives", !onChain && "On-chain", !hasIntradayData && "Intraday"].filter((source): source is string => Boolean(source));
+  return { score: Math.max(50, 100 - missingSources.length * 16), missingSources };
+}
+
+function formatTimeframeAlignment(alignment: BitcoinForecast["multiTimeframe"]["alignment"]) {
+  return { bullish: "Aligned bullish", bearish: "Aligned bearish", neutral: "Neutral", mixed: "Mixed", unavailable: "Unavailable" }[alignment];
+}
+
+function timeframeSignalDetail(alignment: BitcoinForecast["multiTimeframe"]["alignment"]) {
+  return {
+    bullish: "1H, 4H, and daily trends are confirming the same upside direction.",
+    bearish: "1H, 4H, and daily trends are confirming the same downside direction.",
+    neutral: "Short and long timeframes are close to flat.",
+    mixed: "Timeframes disagree, so the short-term contribution is reduced.",
+    unavailable: "Intraday candles are unavailable, so the daily model remains conservative."
+  }[alignment];
 }
 
 function calculateMarketLinkAdjustment(asset: ForecastAsset, btcCandles: BitcoinCandle[], ethCandles: BitcoinCandle[]) {

@@ -706,6 +706,31 @@ button:hover {
   background: #eff7f5;
 }
 
+.forecast-hero__outlook {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.forecast-decision {
+  width: 210px;
+  display: grid;
+  gap: 5px;
+  padding: 18px;
+  border-radius: 18px;
+  background: #eef4f3;
+}
+
+.forecast-decision span,
+.forecast-decision small,
+.forecast-decision b { color: #557176; }
+.forecast-decision strong { font-size: 1.35rem; }
+.forecast-decision small { line-height: 1.35; font-size: .78rem; }
+.forecast-decision b { font-size: .76rem; letter-spacing: .04em; text-transform: uppercase; }
+.forecast-decision--trade { background: #e4f4ea; }.forecast-decision--trade strong { color: #15725f; }
+.forecast-decision--watch { background: #fbf1dc; }.forecast-decision--watch strong { color: #8b641a; }
+.forecast-decision--noEdge { background: #edf1f2; }.forecast-decision--noEdge strong { color: #557176; }
+
 .forecast-bias span,
 .forecast-bias small {
   color: #557176;
@@ -802,7 +827,9 @@ button:hover {
     grid-template-columns: 1fr;
   }
 
-  .forecast-hero, .forecast-layout { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+  .forecast-hero, .forecast-hero__outlook, .forecast-layout { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+
+  .forecast-decision { width: auto; }
 
   .forecast-summary-grid { grid-template-columns: 1fr; }
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDailyEnsemble,
+  buildForecastDecision,
+  buildMultiTimeframeSignal,
   calculateDerivativeAdjustment,
   calculateProbabilisticRange,
   calculateRangeCalibration,
@@ -20,6 +22,21 @@ function makeCandles(count: number): BitcoinCandle[] {
       low: close - 350,
       close,
       volume: 1000 + (index % 9) * 130
+    };
+  });
+}
+
+function makeHourlyCandles(count: number, hourlyMove = 0.002): BitcoinCandle[] {
+  return Array.from({ length: count }, (_, index) => {
+    const close = 60000 * (1 + hourlyMove) ** index;
+    return {
+      date: new Date(Date.UTC(2026, 3, 1, index)).toISOString().slice(0, 10),
+      timestamp: Date.UTC(2026, 3, 1, index),
+      open: close * 0.999,
+      high: close * 1.002,
+      low: close * 0.998,
+      close,
+      volume: 1000
     };
   });
 }
@@ -68,6 +85,35 @@ describe("daily forecast ensemble", () => {
     });
 
     expect(volatileRange).toBeGreaterThan(calmRange);
+  });
+
+  it("uses aligned hourly, four-hour, and daily trends as a bounded confirmation signal", () => {
+    const signal = buildMultiTimeframeSignal(makeHourlyCandles(72), makeCandles(90));
+
+    expect(signal.alignment).toBe("bullish");
+    expect(signal.hourlyTrend).not.toBeNull();
+    expect(signal.fourHourTrend).not.toBeNull();
+    expect(signal.adjustment).toBeGreaterThan(0);
+  });
+
+  it("only opens the decision gate when a validated signal is aligned and strong", () => {
+    const multiTimeframe = buildMultiTimeframeSignal(makeHourlyCandles(72), makeCandles(90));
+    const decision = buildForecastDecision({
+      expectedReturn: 0.01,
+      confidence: 70,
+      hasForecastEdge: true,
+      dataQualityScore: 100,
+      multiTimeframe
+    });
+
+    expect(decision.status).toBe("trade");
+    expect(buildForecastDecision({
+      expectedReturn: 0.001,
+      confidence: 70,
+      hasForecastEdge: true,
+      dataQualityScore: 100,
+      multiTimeframe
+    }).status).toBe("noEdge");
   });
 
   it("widens future ranges when settled forecasts miss the target coverage", () => {
