@@ -58,11 +58,11 @@ export async function runForecastUpdate(userDataPath: string): Promise<ForecastA
   const alerts: ForecastAlert[] = [];
 
   for (const assetSymbol of forecastAssets) {
-    const [candles, derivatives, onChain] = await Promise.all([fetchDailyCandles(assetSymbol), fetchAssetDerivatives(assetSymbol), fetchOnChainMetrics(assetSymbol)]);
+    const [candles, btcCandles, ethCandles, derivatives, onChain] = await Promise.all([fetchDailyCandles(assetSymbol), fetchDailyCandles("BTC"), fetchDailyCandles("ETH"), fetchAssetDerivatives(assetSymbol), fetchOnChainMetrics(assetSymbol)]);
     const priorAssetRecords = recordsForAsset(nextRecords, assetSymbol);
     const records = reconcileRecords(priorAssetRecords, candles);
     const newlySettled = records.filter((record, index) => record.actualClose !== undefined && priorAssetRecords[index]?.actualClose === undefined);
-    const updatedAssetRecords = upsertForecasts(records, candles, applyOpenInterestHistory(derivatives, records), onChain, assetSymbol);
+    const updatedAssetRecords = upsertForecasts(records, candles, applyOpenInterestHistory(derivatives, records), onChain, calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles), assetSymbol);
     const currentDaily = updatedAssetRecords.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1)!;
     const previousDaily = records.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1);
     alerts.push(...detectForecastAlerts(previousDaily, currentDaily, newlySettled, assetSymbol));
@@ -122,7 +122,7 @@ function reconcileRecords(records: RecordItem[], candles: Candle[]) {
   }));
 }
 
-function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: DerivativeMarketData | null, onChain: RecordItem["onChainData"] | null, assetSymbol: ForecastAsset) {
+function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: DerivativeMarketData | null, onChain: RecordItem["onChainData"] | null, marketAdjustment: number, assetSymbol: ForecastAsset) {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
   const latest = candles[candles.length - 1];
@@ -134,13 +134,13 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
   const dailyReturn = currentClose / closes[closes.length - 2] - 1;
   const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
   const volumeConfirmation = calculateVolumeConfirmation(dailyReturn, volumeRatio);
-  const ensemble = buildDailyEnsemble(candles);
+  const ensemble = buildDailyEnsemble(candles, assetSymbol);
   const benchmark = evaluateForecastBenchmark(candles);
   const dailyCalibration = calculateRangeCalibration(records, "daily");
   const weeklyCalibration = calculateRangeCalibration(records, "weekly");
 
   const dailyExpectedReturn = clamp(
-    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trend) + calculateOnChainAdjustment(onChain ?? null) + calculateBias(records, "daily"),
+    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trend) + calculateOnChainAdjustment(onChain ?? null) + marketAdjustment + calculateBias(records, "daily"),
     -0.12,
     0.12
   );
@@ -235,6 +235,7 @@ function getDirection(expectedReturn: number, threshold: number): "Bullish" | "B
 function toDate(timestamp: number) { return new Date(timestamp).toISOString().slice(0, 10); }
 function calculateVolumeConfirmation(dailyReturn: number, ratio: number) { return Math.abs(dailyReturn) < 0.002 || ratio <= 1 ? 0 : Math.sign(dailyReturn) * clamp((ratio - 1) * 0.012, 0, 0.024); }
 function volumeConfidence(dailyReturn: number, ratio: number) { if (Math.abs(dailyReturn) < 0.002) return 0; if (ratio >= 1.15) return clamp((ratio - 1) * 8, 0, 6); return ratio <= 0.8 ? -4 : 0; }
+function calculateMarketLinkAdjustment(asset: ForecastAsset, btcCandles: Candle[], ethCandles: Candle[]) { if (asset === "BTC" || btcCandles.length < 2 || ethCandles.length < 2) return 0; const btcReturn = btcCandles[btcCandles.length - 1].close / btcCandles[btcCandles.length - 2].close - 1; const ethReturn = ethCandles[ethCandles.length - 1].close / ethCandles[ethCandles.length - 2].close - 1; return clamp(asset === "ETH" ? btcReturn * .15 : btcReturn * .32 + (ethReturn - btcReturn) * .18, -.012, .012); }
 
 async function readRecords(filePath: string): Promise<RecordItem[]> {
   try {

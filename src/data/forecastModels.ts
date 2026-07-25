@@ -4,6 +4,7 @@ import type {
   ForecastBenchmark,
   ForecastModelId,
   ForecastModelPerformance,
+  ForecastAsset,
   MarketRegime,
   MarketRegimeId,
   RangeCalibration
@@ -62,20 +63,21 @@ const models: ModelDefinition[] = [
   }
 ];
 
-export function buildDailyEnsemble(candles: BitcoinCandle[]) {
+export function buildDailyEnsemble(candles: BitcoinCandle[], asset: ForecastAsset = "BTC") {
   if (candles.length < MINIMUM_HISTORY) {
     throw new Error("Not enough Bitcoin history to build the forecast ensemble");
   }
 
   const marketRegime = detectMarketRegime(candles);
-  const leaderboard = backtestModels(candles, marketRegime.id);
+  const leaderboard = backtestModels(candles, marketRegime.id, asset);
   const currentReturns = models.map((model) => ({ id: model.id, value: model.predictReturn(candles) }));
   const expectedReturn = currentReturns.reduce(
     (sum, prediction) => sum + prediction.value * leaderboard.find((model) => model.id === prediction.id)!.weight,
     0
   );
 
-  return { expectedReturn: clamp(expectedReturn, -0.12, 0.12), leaderboard, marketRegime };
+  const limit = asset === "BTC" ? 0.12 : asset === "ETH" ? 0.15 : 0.22;
+  return { expectedReturn: clamp(expectedReturn * assetProfile(asset).returnMultiplier, -limit, limit), leaderboard, marketRegime };
 }
 
 export function evaluateForecastBenchmark(candles: BitcoinCandle[]): ForecastBenchmark {
@@ -124,7 +126,7 @@ export function calculateDerivativeAdjustment(data: DerivativeMarketData | null,
   return clamp(fundingAdjustment + openInterestAdjustment, -0.007, 0.007);
 }
 
-function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId): ForecastModelPerformance[] {
+function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId, asset: ForecastAsset = "BTC"): ForecastModelPerformance[] {
   // Reserve the newest 14 closes as a holdout set instead of fitting weights to them.
   const trainingEnd = Math.max(MINIMUM_HISTORY + 1, candles.length - 14);
   const startIndex = Math.max(MINIMUM_HISTORY - 1, trainingEnd - BACKTEST_WINDOW - 1);
@@ -154,6 +156,7 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId):
     };
   });
   const regimeMultipliers = getRegimeMultipliers(activeRegime);
+  const profile = assetProfile(asset);
   const averageError = average(samples.map((sample) => sample.meanAbsolutePercentError));
   const statuses = samples.map((sample) => {
     if (sample.directionalAccuracy < 35 && sample.meanAbsolutePercentError > averageError * 1.35) return "paused" as const;
@@ -162,7 +165,7 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId):
   });
   const scores = samples.map((sample, index) => {
     const statusMultiplier = statuses[index] === "paused" ? 0 : statuses[index] === "reduced" ? 0.35 : 1;
-    return regimeMultipliers[sample.id] / Math.max(sample.meanAbsolutePercentError, 0.05) * (0.8 + sample.directionalAccuracy / 250) * statusMultiplier;
+    return regimeMultipliers[sample.id] * profile.modelMultipliers[sample.id] / Math.max(sample.meanAbsolutePercentError, 0.05) * (0.8 + sample.directionalAccuracy / 250) * statusMultiplier;
   });
   const totalScore = average(scores) * scores.length;
 
@@ -177,6 +180,12 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId):
       status: statuses[index]
     }))
     .sort((left, right) => right.weight - left.weight);
+}
+
+function assetProfile(asset: ForecastAsset) {
+  if (asset === "BTC") return { returnMultiplier: 0.85, modelMultipliers: { technical: 0.9, trend: 1.25, meanReversion: 0.85 } };
+  if (asset === "ETH") return { returnMultiplier: 1, modelMultipliers: { technical: 1, trend: 1.1, meanReversion: 0.9 } };
+  return { returnMultiplier: 1.2, modelMultipliers: { technical: 1.2, trend: 0.85, meanReversion: 1.1 } };
 }
 
 type ForecastOutcome = { absoluteError: number; correctDirection: boolean };

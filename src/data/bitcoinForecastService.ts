@@ -37,14 +37,16 @@ const forecastAssets: Record<ForecastAsset, { name: string }> = {
 type CoinbaseCandle = [number, number, number, number, number, number];
 
 export async function fetchAssetForecast(assetSymbol: ForecastAsset = "BTC"): Promise<BitcoinForecast> {
-  const [candles, derivatives, onChain] = await Promise.all([
+  const [candles, btcCandles, ethCandles, derivatives, onChain] = await Promise.all([
     fetchAssetDailyCandles(assetSymbol),
+    fetchAssetDailyCandles("BTC"),
+    fetchAssetDailyCandles("ETH"),
     fetchAssetDerivatives(assetSymbol),
     fetchOnChainMetrics(assetSymbol)
   ]);
   const allRecords = await readAllForecastRecords();
   const records = reconcileForecastRecords(recordsForAsset(allRecords, assetSymbol), candles);
-  const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records), onChain);
+  const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records), onChain, assetSymbol, btcCandles, ethCandles);
   const nextRecords = upsertForecastRecords(records, forecast, assetSymbol);
 
   await saveForecastRecords(assetSymbol, nextRecords, allRecords);
@@ -127,7 +129,7 @@ function buildForecast(
   candles: BitcoinCandle[],
   records: ForecastRecord[],
   derivatives: BitcoinForecast["derivatives"]
-  , onChain: BitcoinForecast["onChain"]
+  , onChain: BitcoinForecast["onChain"], assetSymbol: ForecastAsset, btcCandles: BitcoinCandle[], ethCandles: BitcoinCandle[]
 ): Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy" | "confidenceCalibration"> {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
@@ -146,13 +148,13 @@ function buildForecast(
     latestDailyReturn,
     volumeRatio
   );
-  const ensemble = buildDailyEnsemble(candles);
+  const ensemble = buildDailyEnsemble(candles, assetSymbol);
   const benchmark = evaluateForecastBenchmark(candles);
   const latestCandle = candles[candles.length - 1];
   const rangeCalibration = calculateRangeCalibration(records, "daily");
   const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
-    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + calculateOnChainAdjustment(onChain) + correction,
+    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + calculateOnChainAdjustment(onChain) + calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles) + correction,
     -0.12,
     0.12
   );
@@ -231,6 +233,12 @@ function buildForecast(
       detail: onChain
         ? `Active addresses changed ${(onChain.activeAddressesChange7Day * 100).toFixed(1)}% and transactions changed ${(onChain.transactionCountChange7Day * 100).toFixed(1)}% versus the prior 7-day average.`
         : "On-chain activity is temporarily unavailable, so it has no weight."
+    },
+    {
+      label: "Market correlation",
+      value: formatSignedPercent(calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles)),
+      direction: calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles) > 0 ? "positive" : calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles) < 0 ? "negative" : "neutral",
+      detail: assetSymbol === "BTC" ? "Bitcoin is the market anchor, so no external correlation adjustment is applied." : "BTC direction and the ETH/BTC relationship provide a small, capped market-context adjustment."
     },
     {
       label: "Market regime",
@@ -449,6 +457,14 @@ function calculateConfidenceCalibration(records: ForecastRecord[]): BitcoinForec
 function calculateDataQuality(derivatives: BitcoinForecast["derivatives"], onChain: BitcoinForecast["onChain"]): BitcoinForecast["dataQuality"] {
   const missingSources = [!derivatives && "Derivatives", !onChain && "On-chain"].filter((source): source is string => Boolean(source));
   return { score: Math.max(60, 100 - missingSources.length * 20), missingSources };
+}
+
+function calculateMarketLinkAdjustment(asset: ForecastAsset, btcCandles: BitcoinCandle[], ethCandles: BitcoinCandle[]) {
+  if (asset === "BTC" || btcCandles.length < 2 || ethCandles.length < 2) return 0;
+  const btcReturn = btcCandles[btcCandles.length - 1].close / btcCandles[btcCandles.length - 2].close - 1;
+  const ethReturn = ethCandles[ethCandles.length - 1].close / ethCandles[ethCandles.length - 2].close - 1;
+  const value = asset === "ETH" ? btcReturn * 0.15 : btcReturn * 0.32 + (ethReturn - btcReturn) * 0.18;
+  return clamp(value, -0.012, 0.012);
 }
 
 function buildWeeklyForecast({
