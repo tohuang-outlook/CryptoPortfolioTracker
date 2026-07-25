@@ -10,6 +10,8 @@ const zhTW: Record<string, string> = {
   "Bitcoin Forecast": "比特幣預測",
   "Market Forecast": "市場預測",
   "Forecast asset": "預測資產",
+  "Forecast chart range": "預測圖表範圍",
+  All: "全部",
   active: "啟用",
   reduced: "降權",
   paused: "暫停",

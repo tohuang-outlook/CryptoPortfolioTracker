@@ -20,6 +20,7 @@ const currency = new Intl.NumberFormat("en-US", {
 
 export function BitcoinForecastDashboard() {
   const [assetSymbol, setAssetSymbol] = useState<ForecastAsset>("BTC");
+  const [chartRange, setChartRange] = useState<14 | 30 | 90 | "all">(90);
   const { forecast, status, error } = useBitcoinForecast(assetSymbol);
   const { language, t } = useTranslation();
 
@@ -32,10 +33,10 @@ export function BitcoinForecastDashboard() {
   }
 
   const forecastDirectionClass = forecast.direction.toLowerCase();
-  const settledRecords = forecast.records
+  const allSettledRecords = forecast.records
     .filter((record) => (record.horizon ?? "daily") === "daily" && record.actualClose !== undefined)
-    .sort((left, right) => left.targetDate.localeCompare(right.targetDate))
-    .slice(-14);
+    .sort((left, right) => left.targetDate.localeCompare(right.targetDate));
+  const settledRecords = chartRange === "all" ? allSettledRecords : allSettledRecords.slice(-chartRange);
   const errorChart = settledRecords.map((record) => ({
     date: shortDate(record.targetDate, language),
     forecast: Math.round(record.predictedClose),
@@ -96,9 +97,16 @@ export function BitcoinForecastDashboard() {
             <p className="panel__eyebrow">{t("Daily forecast tracking")}</p>
             <h2>{t("Forecast vs actual close")}</h2>
           </div>
-          <div className="forecast-chart__legend" aria-label={t("Chart legend")}>
-            <span><i className="forecast-chart__legend-dot forecast-chart__legend-dot--forecast" />{t("Forecast")}</span>
-            <span><i className="forecast-chart__legend-dot forecast-chart__legend-dot--actual" />{t("Actual")}</span>
+          <div className="forecast-chart__controls">
+            <div className="forecast-chart__range" aria-label={t("Forecast chart range")}>
+              {([14, 30, 90, "all"] as const).map((range) => (
+                <button key={range} type="button" className={chartRange === range ? "forecast-chart__range-item forecast-chart__range-item--active" : "forecast-chart__range-item"} onClick={() => setChartRange(range)}>{range === "all" ? t("All") : `${range}D`}</button>
+              ))}
+            </div>
+            <div className="forecast-chart__legend" aria-label={t("Chart legend")}>
+              <span><i className="forecast-chart__legend-dot forecast-chart__legend-dot--forecast" />{t("Forecast")}</span>
+              <span><i className="forecast-chart__legend-dot forecast-chart__legend-dot--actual" />{t("Actual")}</span>
+            </div>
           </div>
         </div>
         {errorChart.length < 2 ? (
