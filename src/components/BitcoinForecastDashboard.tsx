@@ -71,8 +71,9 @@ export function BitcoinForecastDashboard() {
 
       <section className="forecast-summary-grid">
         <ForecastMetric label={t("{asset} daily close", { asset: assetSymbol })} value={currency.format(forecast.currentClose)} detail={`${t("Closed")} ${shortDate(forecast.asOfDate, language)}`} />
-        <ForecastMetric label={t("Next daily close")} value={currency.format(forecast.predictedClose)} detail={shortDate(forecast.targetDate, language)} />
-        <ForecastMetric label={t("Expected range")} value={`${currency.format(forecast.lowerBound)} - ${currency.format(forecast.upperBound)}`} detail={t("Volatility-adjusted")} />
+        <ForecastMetric label={t("Base case (50%)")} value={currency.format(forecast.predictedClose)} detail={shortDate(forecast.targetDate, language)} />
+        <ForecastMetric label={t("Lower case (16%)")} value={currency.format(forecast.lowerBound)} detail={t("Central 68% range")} />
+        <ForecastMetric label={t("Upper case (84%)")} value={currency.format(forecast.upperBound)} detail={t("Central 68% range")} />
         <ForecastMetric label={t("Confidence")} value={`${forecast.confidence}%`} detail={t("Model confidence, not certainty")} />
       </section>
 

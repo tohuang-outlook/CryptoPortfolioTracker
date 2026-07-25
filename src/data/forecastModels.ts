@@ -75,12 +75,23 @@ export function buildDailyEnsemble(candles: BitcoinCandle[], asset: ForecastAsse
     (sum, prediction) => sum + prediction.value * leaderboard.find((model) => model.id === prediction.id)!.weight,
     0
   );
+  const modelDispersion = Math.sqrt(currentReturns.reduce((sum, prediction) => {
+    const weight = leaderboard.find((model) => model.id === prediction.id)!.weight;
+    return sum + weight * (prediction.value - expectedReturn) ** 2;
+  }, 0));
 
   const limit = asset === "BTC" ? 0.12 : asset === "ETH" ? 0.15 : 0.22;
-  return { expectedReturn: clamp(expectedReturn * assetProfile(asset).returnMultiplier, -limit, limit), leaderboard, marketRegime };
+  const returnMultiplier = assetProfile(asset).returnMultiplier;
+  return {
+    expectedReturn: clamp(expectedReturn * returnMultiplier, -limit, limit),
+    leaderboard,
+    marketRegime,
+    modelDispersion: modelDispersion * returnMultiplier,
+    confidencePenalty: calculateEnsembleConfidencePenalty(marketRegime.id, modelDispersion * returnMultiplier)
+  };
 }
 
-export function evaluateForecastBenchmark(candles: BitcoinCandle[]): ForecastBenchmark {
+export function evaluateForecastBenchmark(candles: BitcoinCandle[], asset: ForecastAsset = "BTC"): ForecastBenchmark {
   const startIndex = Math.max(MINIMUM_HISTORY + 12, candles.length - BACKTEST_WINDOW - 1);
   const ensembleOutcomes: ForecastOutcome[] = [];
   const naiveOutcomes: ForecastOutcome[] = [];
@@ -89,11 +100,7 @@ export function evaluateForecastBenchmark(candles: BitcoinCandle[]): ForecastBen
   for (let index = startIndex; index < candles.length - 1; index += 1) {
     const history = candles.slice(0, index + 1);
     const baseClose = history[history.length - 1].close;
-    const weights = backtestModels(history, detectMarketRegime(history).id);
-    const ensembleReturn = models.reduce(
-      (sum, model) => sum + model.predictReturn(history) * weights.find((item) => item.id === model.id)!.weight,
-      0
-    );
+    const ensembleReturn = buildDailyEnsemble(history, asset).expectedReturn;
     const actualClose = candles[index + 1].close;
     ensembleOutcomes.push(makeOutcome(baseClose, baseClose * (1 + ensembleReturn), actualClose));
     naiveOutcomes.push(makeOutcome(baseClose, baseClose, actualClose));
@@ -128,7 +135,7 @@ export function calculateDerivativeAdjustment(data: DerivativeMarketData | null,
 
 function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId, asset: ForecastAsset = "BTC"): ForecastModelPerformance[] {
   // Reserve the newest 14 closes as a holdout set instead of fitting weights to them.
-  const trainingEnd = Math.max(MINIMUM_HISTORY + 1, candles.length - 14);
+  const trainingEnd = Math.min(candles.length, Math.max(MINIMUM_HISTORY + 1, candles.length - 14));
   const startIndex = Math.max(MINIMUM_HISTORY - 1, trainingEnd - BACKTEST_WINDOW - 1);
   const samples = models.map((model) => {
     const outcomes: Array<{ absoluteError: number; correctDirection: boolean; regime: MarketRegimeId }> = [];
@@ -146,13 +153,20 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId, 
     }
 
     const regimeOutcomes = outcomes.filter((outcome) => outcome.regime === activeRegime);
-    const evaluatedOutcomes = regimeOutcomes.length >= 12 ? regimeOutcomes : outcomes;
+    const hasRegimeSample = regimeOutcomes.length >= 8;
+    const regimeWeight = hasRegimeSample ? Math.min(0.78, 0.42 + regimeOutcomes.length / 50) : 0;
+    const overallError = average(outcomes.map((outcome) => outcome.absoluteError));
+    const regimeError = hasRegimeSample ? average(regimeOutcomes.map((outcome) => outcome.absoluteError)) : overallError;
+    const overallDirectionAccuracy = outcomes.filter((outcome) => outcome.correctDirection).length / outcomes.length;
+    const regimeDirectionAccuracy = hasRegimeSample
+      ? regimeOutcomes.filter((outcome) => outcome.correctDirection).length / regimeOutcomes.length
+      : overallDirectionAccuracy;
 
     return {
       ...model,
-      meanAbsolutePercentError: average(evaluatedOutcomes.map((outcome) => outcome.absoluteError)) * 100,
-      directionalAccuracy: (evaluatedOutcomes.filter((outcome) => outcome.correctDirection).length / evaluatedOutcomes.length) * 100,
-      evaluatedDays: evaluatedOutcomes.length
+      meanAbsolutePercentError: (regimeError * regimeWeight + overallError * (1 - regimeWeight)) * 100,
+      directionalAccuracy: (regimeDirectionAccuracy * regimeWeight + overallDirectionAccuracy * (1 - regimeWeight)) * 100,
+      evaluatedDays: hasRegimeSample ? regimeOutcomes.length : outcomes.length
     };
   });
   const regimeMultipliers = getRegimeMultipliers(activeRegime);
@@ -249,6 +263,36 @@ export function calculateRangeCalibration(
     targetCoverage,
     multiplier: clamp(1 + (targetCoverage - observedCoverage) * 1.5, 0.85, 1.45)
   };
+}
+
+export function calculateProbabilisticRange({
+  volatility,
+  modelDispersion,
+  marketRegime,
+  calibrationMultiplier,
+  macroMultiplier = 1
+}: {
+  volatility: number;
+  modelDispersion: number;
+  marketRegime: MarketRegimeId;
+  calibrationMultiplier: number;
+  macroMultiplier?: number;
+}) {
+  const regimeMultiplier = marketRegime === "volatile"
+    ? 1.34
+    : marketRegime === "downtrend"
+      ? 1.1
+      : marketRegime === "uptrend"
+        ? 1.03
+        : 0.9;
+  const uncertainty = volatility * 1.35 + modelDispersion * 0.85;
+
+  return clamp(uncertainty * regimeMultiplier * calibrationMultiplier * macroMultiplier, 0.025, 0.2);
+}
+
+export function calculateEnsembleConfidencePenalty(marketRegime: MarketRegimeId, modelDispersion: number) {
+  const regimePenalty = marketRegime === "volatile" ? 9 : marketRegime === "downtrend" ? 3 : marketRegime === "uptrend" ? 1 : 0;
+  return clamp(regimePenalty + modelDispersion * 220, 0, 14);
 }
 
 function getRegimeMultipliers(regime: MarketRegimeId): Record<ForecastModelId, number> {

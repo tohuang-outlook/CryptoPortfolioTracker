@@ -4,6 +4,7 @@ import {
   average,
   buildDailyEnsemble,
   calculateDerivativeAdjustment,
+  calculateProbabilisticRange,
   calculateRangeCalibration,
   calculateEma,
   calculateRsi,
@@ -135,7 +136,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
   const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
   const volumeConfirmation = calculateVolumeConfirmation(dailyReturn, volumeRatio);
   const ensemble = buildDailyEnsemble(candles, assetSymbol);
-  const benchmark = evaluateForecastBenchmark(candles);
+  const benchmark = evaluateForecastBenchmark(candles, assetSymbol);
   const dailyCalibration = calculateRangeCalibration(records, "daily");
   const weeklyCalibration = calculateRangeCalibration(records, "weekly");
 
@@ -156,11 +157,16 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], derivatives: 
     targetDate: toDate(latest.timestamp + DAY_IN_MS),
     baseClose: currentClose,
     expectedReturn: dailyExpectedReturn,
-    rangePercent: clamp(volatility * 1.6 * dailyCalibration.multiplier, 0.025, 0.16),
+    rangePercent: calculateProbabilisticRange({
+      volatility,
+      modelDispersion: ensemble.modelDispersion,
+      marketRegime: ensemble.marketRegime.id,
+      calibrationMultiplier: dailyCalibration.multiplier
+    }),
     confidence: Math.round(clamp(
       72 - volatility * 450 - Math.abs(rsi - 50) * 0.28 + volumeConfidence(dailyReturn, volumeRatio) -
         (dailyCalibration.observedCoverage === null ? 0 : Math.abs(dailyCalibration.observedCoverage - dailyCalibration.targetCoverage) * 30) -
-        (benchmark.hasEdge ? 0 : 12),
+        (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty,
       38,
       78
     )),

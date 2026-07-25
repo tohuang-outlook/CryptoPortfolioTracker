@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDailyEnsemble,
   calculateDerivativeAdjustment,
+  calculateProbabilisticRange,
   calculateRangeCalibration,
   detectMarketRegime,
   evaluateForecastBenchmark
@@ -41,11 +42,32 @@ describe("daily forecast ensemble", () => {
     expect(() => buildDailyEnsemble(makeCandles(30))).toThrow("Not enough Bitcoin history");
   });
 
+  it("keeps the minimum usable history inside the available candle range", () => {
+    expect(buildDailyEnsemble(makeCandles(31)).leaderboard).toHaveLength(3);
+  });
+
   it("identifies a rising market state and prioritizes the trend model", () => {
     const result = buildDailyEnsemble(makeCandles(90));
 
     expect(detectMarketRegime(makeCandles(90)).id).toBe("uptrend");
     expect(result.leaderboard.find((model) => model.id === "trend")!.weight).toBeGreaterThan(0);
+  });
+
+  it("widens the probability range when model disagreement and regime risk increase", () => {
+    const calmRange = calculateProbabilisticRange({
+      volatility: 0.015,
+      modelDispersion: 0.003,
+      marketRegime: "range",
+      calibrationMultiplier: 1
+    });
+    const volatileRange = calculateProbabilisticRange({
+      volatility: 0.035,
+      modelDispersion: 0.02,
+      marketRegime: "volatile",
+      calibrationMultiplier: 1
+    });
+
+    expect(volatileRange).toBeGreaterThan(calmRange);
   });
 
   it("widens future ranges when settled forecasts miss the target coverage", () => {

@@ -10,6 +10,7 @@ import {
   average,
   buildDailyEnsemble,
   calculateDerivativeAdjustment,
+  calculateProbabilisticRange,
   calculateRangeCalibration,
   calculateEma,
   calculateRsi,
@@ -149,7 +150,7 @@ function buildForecast(
     volumeRatio
   );
   const ensemble = buildDailyEnsemble(candles, assetSymbol);
-  const benchmark = evaluateForecastBenchmark(candles);
+  const benchmark = evaluateForecastBenchmark(candles, assetSymbol);
   const latestCandle = candles[candles.length - 1];
   const rangeCalibration = calculateRangeCalibration(records, "daily");
   const correction = calculateBiasCorrection(records, "daily");
@@ -162,7 +163,13 @@ function buildForecast(
   const asOfDate = latestCandle.date;
   const macroRisk = getMacroEventRisk(asOfDate);
   const dataQuality = calculateDataQuality(derivatives, onChain);
-  const rangePercent = clamp(volatility * 1.6 * rangeCalibration.multiplier * (macroRisk?.rangeMultiplier ?? 1), 0.025, 0.2);
+  const rangePercent = calculateProbabilisticRange({
+    volatility,
+    modelDispersion: ensemble.modelDispersion,
+    marketRegime: ensemble.marketRegime.id,
+    calibrationMultiplier: rangeCalibration.multiplier,
+    macroMultiplier: macroRisk?.rangeMultiplier ?? 1
+  });
   const calibrationPenalty = rangeCalibration.observedCoverage === null
     ? 0
     : Math.abs(rangeCalibration.observedCoverage - rangeCalibration.targetCoverage) * 30;
@@ -172,7 +179,7 @@ function buildForecast(
         volatility * 450 -
         Math.abs(rsi14 - 50) * 0.28 +
         calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio) -
-        calibrationPenalty + (benchmark.hasEdge ? 0 : 12) - (macroRisk?.confidencePenalty ?? 0) - (100 - dataQuality.score) * 0.18,
+        calibrationPenalty + (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty - (macroRisk?.confidencePenalty ?? 0) - (100 - dataQuality.score) * 0.18,
       38,
       78
     )
@@ -245,6 +252,12 @@ function buildForecast(
       value: ensemble.marketRegime.label,
       direction: ensemble.marketRegime.id === "uptrend" ? "positive" : ensemble.marketRegime.id === "downtrend" ? "negative" : "neutral",
       detail: ensemble.marketRegime.detail
+    },
+    {
+      label: "Forecast range",
+      value: `±${(rangePercent * 100).toFixed(1)}%`,
+      direction: ensemble.marketRegime.id === "volatile" ? "negative" : "neutral",
+      detail: "The central 68% range uses volatility, model disagreement, the current market state, and past calibration."
     },
     {
       label: "Ensemble model",
