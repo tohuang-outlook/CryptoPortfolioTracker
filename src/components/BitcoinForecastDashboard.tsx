@@ -185,6 +185,16 @@ export function BitcoinForecastDashboard() {
           <span className="forecast-status-card__tag">{forecast.derivatives ? `${t("Open interest")}: ${formatBillions(forecast.derivatives.openInterestValue)}` : t("No derivatives weight")}</span>
         </article>
         <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Order book & trade flow")}</p>
+          <h2>{forecast.microstructure ? `${(forecast.microstructure.orderBookImbalance * 100).toFixed(1)}%` : t("Unavailable")}</h2>
+          <p>{!forecast.microstructure
+            ? t("Coinbase market depth is temporarily unavailable, so this signal has no weight.")
+            : forecast.microstructureSamples < 12
+              ? t("Collecting hourly snapshots: {count}/12. The signal stays inactive until it has enough context.", { count: forecast.microstructureSamples })
+              : t("Depth and recent trade pressure are compared with the latest 24 hourly snapshots.")}</p>
+          <span className="forecast-status-card__tag">{forecast.microstructure ? `${t("Spread")}: ${(forecast.microstructure.spreadPercent * 100).toFixed(3)}%` : t("Collecting data")}</span>
+        </article>
+        <article className="panel forecast-status-card">
           <p className="panel__eyebrow">{t("Forecast edge gate")}</p>
           <h2>{forecast.benchmark.hasEdge ? t("Edge established") : t("No edge established")}</h2>
           <p>{t("Ensemble error {ensemble} vs best baseline {baseline} across {days} walk-forward days.", {
@@ -201,6 +211,34 @@ export function BitcoinForecastDashboard() {
         <div className="model-leaderboard" role="table">
           <div className="model-leaderboard__header"><span>{t("Confidence band")}</span><span>{t("Average confidence")}</span><span>{t("Range hit rate")}</span><span>{t("Settled forecasts")}</span></div>
           {forecast.confidenceCalibration.map((band) => <div className="model-leaderboard__row" role="row" key={band.label}><strong>{band.label}</strong><span>{band.settledCount ? `${band.averageConfidence.toFixed(0)}%` : "-"}</span><span>{band.rangeHitRate === null ? "-" : `${(band.rangeHitRate * 100).toFixed(0)}%`}</span><span>{band.settledCount}</span></div>)}
+        </div>
+      </article>
+
+      <article className="panel forecast-panel">
+        <div className="panel__header">
+          <div>
+            <p className="panel__eyebrow">{t("Feature ablation")}</p>
+            <h2>{t("Evidence-based signal selection")}</h2>
+            <p className="forecast-panel__copy">{t("Each row removes one input in a time-ordered backtest. A paused input is automatically excluded until future evidence supports it again.")}</p>
+          </div>
+        </div>
+        <div className="feature-ablation" role="table" aria-label={t("Feature ablation")}>
+          <div className="feature-ablation__header" role="row">
+            <span role="columnheader">{t("Signal")}</span>
+            <span role="columnheader">{t("Status")}</span>
+            <span role="columnheader">{t("Average error")}</span>
+            <span role="columnheader">{t("Removed impact")}</span>
+            <span role="columnheader">{t("Test days")}</span>
+          </div>
+          {forecast.featureAblation.map((feature) => (
+            <div className="feature-ablation__row" role="row" key={feature.id}>
+              <strong role="cell">{t(feature.label)}</strong>
+              <span role="cell" className={`feature-ablation__status feature-ablation__status--${feature.status}`}>{t(ablationStatus(feature.status))}</span>
+              <span role="cell">{feature.meanAbsolutePercentError.toFixed(2)}%</span>
+              <span role="cell" className={feature.errorDelta > 0.04 ? "forecast-journal__negative" : feature.errorDelta < -0.04 ? "forecast-journal__positive" : ""}>{formatErrorDelta(feature.errorDelta)}</span>
+              <span role="cell">{feature.evaluatedDays}</span>
+            </div>
+          ))}
         </div>
       </article>
 
@@ -332,6 +370,14 @@ function formatWeights(record: { modelWeights?: Partial<Record<"technical" | "tr
 
 function formatBillions(value: number) {
   return `$${(value / 1_000_000_000).toFixed(1)}B`;
+}
+
+function formatErrorDelta(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)} pp`;
+}
+
+function ablationStatus(status: "helpful" | "neutral" | "paused" | "learning") {
+  return { helpful: "Helpful", neutral: "Neutral", paused: "Paused", learning: "Learning" }[status];
 }
 
 function decisionLabel(status: "trade" | "watch" | "noEdge") {

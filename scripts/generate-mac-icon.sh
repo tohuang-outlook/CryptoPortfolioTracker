@@ -28,7 +28,7 @@ sips -z 512 512 "$NORMALIZED_ICON" --out "$ICONSET_DIR/icon_256x256@2x.png"
 sips -z 512 512 "$NORMALIZED_ICON" --out "$ICONSET_DIR/icon_512x512.png"
 sips -z 1024 1024 "$NORMALIZED_ICON" --out "$ICONSET_DIR/icon_512x512@2x.png"
 
-sips -s format icns "$NORMALIZED_ICON" --out "$TEMP_ICON"
+sips -s format icns "$NORMALIZED_ICON" --out "$TEMP_ICON" 2>/dev/null || iconutil -c icns "$ICONSET_DIR" -o "$TEMP_ICON"
 [ -s "$TEMP_ICON" ]
 cp "$TEMP_ICON" "$OUTPUT_ICON"
 [ -s "$OUTPUT_ICON" ]

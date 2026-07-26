@@ -4,7 +4,8 @@ import type {
   ForecastAsset,
   ForecastHorizon,
   ForecastRecord,
-  ForecastSignal
+  ForecastSignal,
+  MicrostructureSnapshot
 } from "../types/forecast";
 import {
   average,
@@ -18,14 +19,18 @@ import {
   calculateRsi,
   calculateVolatility,
   clamp,
-  evaluateForecastBenchmark
+  evaluateFeatureAblation,
+  evaluateForecastBenchmark,
+  getAutoExcludedFeatures
 } from "./forecastModels";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "./derivativesService";
 import { calculateOnChainAdjustment, fetchOnChainMetrics } from "./onChainService";
 import { getMacroEventRisk } from "./macroEventService";
+import { appendMicrostructureSnapshot, calculateMicrostructureAdjustment, fetchMicrostructureSnapshot } from "./microstructureService";
 
 const COINBASE_CANDLES_URL = "https://api.exchange.coinbase.com/products";
 const FORECAST_STORAGE_KEY = "crypto-portfolio-tracker-forecast-records-v2";
+const MICROSTRUCTURE_STORAGE_KEY = "crypto-portfolio-tracker-microstructure-v1";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const forecastAssets: Record<ForecastAsset, { name: string }> = {
@@ -40,17 +45,36 @@ const forecastAssets: Record<ForecastAsset, { name: string }> = {
 type CoinbaseCandle = [number, number, number, number, number, number];
 
 export async function fetchAssetForecast(assetSymbol: ForecastAsset = "BTC"): Promise<BitcoinForecast> {
-  const [candles, btcCandles, ethCandles, hourlyCandles, derivatives, onChain] = await Promise.all([
+  const [candles, btcCandles, ethCandles, hourlyCandles, derivatives, onChain, microstructure, allRecords, storedSnapshots] = await Promise.all([
     fetchAssetDailyCandles(assetSymbol),
     fetchAssetDailyCandles("BTC"),
     fetchAssetDailyCandles("ETH"),
     fetchAssetHourlyCandles(assetSymbol).catch(() => []),
     fetchAssetDerivatives(assetSymbol),
-    fetchOnChainMetrics(assetSymbol)
+    fetchOnChainMetrics(assetSymbol),
+    fetchMicrostructureSnapshot(assetSymbol),
+    readAllForecastRecords(),
+    readMicrostructureSnapshots()
   ]);
-  const allRecords = await readAllForecastRecords();
+  const snapshots = appendMicrostructureSnapshot(storedSnapshots, microstructure);
+  await saveMicrostructureSnapshots(snapshots);
   const records = reconcileForecastRecords(recordsForAsset(allRecords, assetSymbol), candles);
-  const forecast = buildForecast(candles, records, applyOpenInterestHistory(derivatives, records), onChain, assetSymbol, btcCandles, ethCandles, hourlyCandles);
+  const featureAblation = evaluateFeatureAblation(candles, assetSymbol);
+  const excludedFeatures = getAutoExcludedFeatures(featureAblation);
+  const forecast = buildForecast(
+    candles,
+    records,
+    applyOpenInterestHistory(derivatives, records),
+    onChain,
+    assetSymbol,
+    btcCandles,
+    ethCandles,
+    hourlyCandles,
+    microstructure,
+    snapshots.filter((snapshot) => snapshot.assetSymbol === assetSymbol),
+    featureAblation,
+    excludedFeatures
+  );
   const nextRecords = upsertForecastRecords(records, forecast, assetSymbol);
 
   await saveForecastRecords(assetSymbol, nextRecords, allRecords);
@@ -156,7 +180,7 @@ function buildForecast(
   candles: BitcoinCandle[],
   records: ForecastRecord[],
   derivatives: BitcoinForecast["derivatives"]
-  , onChain: BitcoinForecast["onChain"], assetSymbol: ForecastAsset, btcCandles: BitcoinCandle[], ethCandles: BitcoinCandle[], hourlyCandles: BitcoinCandle[]
+  , onChain: BitcoinForecast["onChain"], assetSymbol: ForecastAsset, btcCandles: BitcoinCandle[], ethCandles: BitcoinCandle[], hourlyCandles: BitcoinCandle[], microstructure: MicrostructureSnapshot | null, microstructureSnapshots: MicrostructureSnapshot[], featureAblation: BitcoinForecast["featureAblation"], excludedFeatures: BitcoinForecast["featureAblation"][number]["id"][]
 ): Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy" | "confidenceCalibration"> {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
@@ -175,21 +199,21 @@ function buildForecast(
     latestDailyReturn,
     volumeRatio
   );
-  const ensemble = buildDailyEnsemble(candles, assetSymbol);
+  const ensemble = buildDailyEnsemble(candles, assetSymbol, excludedFeatures);
   const multiTimeframe = buildMultiTimeframeSignal(hourlyCandles, candles);
-  const benchmark = evaluateForecastBenchmark(candles, assetSymbol);
+  const benchmark = evaluateForecastBenchmark(candles, assetSymbol, excludedFeatures);
   const latestCandle = candles[candles.length - 1];
   const rangeCalibration = calculateRangeCalibration(records, "daily");
   const correction = calculateBiasCorrection(records, "daily");
   const expectedReturn = clamp(
-    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + calculateOnChainAdjustment(onChain) + calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles) + multiTimeframe.adjustment + correction,
+    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + calculateOnChainAdjustment(onChain) + calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles) + multiTimeframe.adjustment + calculateMicrostructureAdjustment(microstructure, microstructureSnapshots) + correction,
     -0.12,
     0.12
   );
   const predictedClose = currentClose * (1 + expectedReturn);
   const asOfDate = latestCandle.date;
   const macroRisk = getMacroEventRisk(asOfDate);
-  const dataQuality = calculateDataQuality(derivatives, onChain, hourlyCandles.length >= 25);
+  const dataQuality = calculateDataQuality(derivatives, onChain, hourlyCandles.length >= 25, Boolean(microstructure));
   const rangePercent = calculateProbabilisticRange({
     volatility,
     modelDispersion: ensemble.modelDispersion,
@@ -256,6 +280,16 @@ function buildForecast(
       value: `${volumeRatio.toFixed(2)}x 20D avg`,
       direction: getVolumeDirection(latestDailyReturn, volumeRatio),
       detail: getVolumeDetail(latestDailyReturn, volumeRatio)
+    },
+    {
+      label: "Order book & trade flow",
+      value: microstructure ? `${(microstructure.orderBookImbalance * 100).toFixed(1)}% depth` : "Unavailable",
+      direction: microstructure && calculateMicrostructureAdjustment(microstructure, microstructureSnapshots) > 0.0003 ? "positive" : microstructure && calculateMicrostructureAdjustment(microstructure, microstructureSnapshots) < -0.0003 ? "negative" : "neutral",
+      detail: !microstructure
+        ? "Coinbase market depth is temporarily unavailable, so this signal has no weight."
+        : microstructureSnapshots.length < 12
+          ? `Collecting hourly snapshots (${microstructureSnapshots.length}/12) before market depth can influence the forecast.`
+          : `Top-of-book depth is ${(microstructure.orderBookImbalance * 100).toFixed(1)}% bid-heavy; recent trade flow is ${microstructure.tradeFlowImbalance === null ? "unavailable" : `${(microstructure.tradeFlowImbalance * 100).toFixed(1)}%`}.`
     },
     {
       label: "Derivatives positioning",
@@ -334,6 +368,9 @@ function buildForecast(
     rangeCalibration,
     derivatives,
     onChain,
+    microstructure,
+    microstructureSamples: microstructureSnapshots.length,
+    featureAblation,
     macroRisk,
     dataQuality,
     benchmark
@@ -375,6 +412,7 @@ function upsertForecastRecords(
     ),
     derivativeData: forecast.derivatives ?? undefined,
     onChainData: forecast.onChain ?? undefined,
+    microstructureData: forecast.microstructure ?? undefined,
     hasForecastEdge: forecast.benchmark.hasEdge,
     multiTimeframe: forecast.multiTimeframe,
     decision: forecast.decision
@@ -442,6 +480,28 @@ async function saveForecastRecords(assetSymbol: ForecastAsset, records: Forecast
   window.localStorage.setItem(FORECAST_STORAGE_KEY, value);
 }
 
+async function readMicrostructureSnapshots(): Promise<MicrostructureSnapshot[]> {
+  try {
+    const rawValue = window.desktopApp
+      ? await window.desktopApp.microstructureStorage.load()
+      : window.localStorage.getItem(MICROSTRUCTURE_STORAGE_KEY);
+    if (!rawValue) return [];
+    const parsed = JSON.parse(rawValue) as unknown;
+    return Array.isArray(parsed) ? parsed.filter(isMicrostructureSnapshot) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveMicrostructureSnapshots(snapshots: MicrostructureSnapshot[]) {
+  const value = JSON.stringify(snapshots);
+  if (window.desktopApp) {
+    await window.desktopApp.microstructureStorage.save(value);
+    return;
+  }
+  window.localStorage.setItem(MICROSTRUCTURE_STORAGE_KEY, value);
+}
+
 function recordsForAsset(records: ForecastRecord[], assetSymbol: ForecastAsset) {
   return records.filter((record) => belongsToAsset(record, assetSymbol));
 }
@@ -458,6 +518,15 @@ function isForecastRecord(value: unknown): value is ForecastRecord {
 
   const record = value as Partial<ForecastRecord>;
   return typeof record.targetDate === "string" && typeof record.predictedClose === "number" && typeof record.baseClose === "number";
+}
+
+function isMicrostructureSnapshot(value: unknown): value is MicrostructureSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Partial<MicrostructureSnapshot>;
+  return typeof snapshot.assetSymbol === "string" &&
+    typeof snapshot.capturedAt === "string" &&
+    typeof snapshot.orderBookImbalance === "number" &&
+    typeof snapshot.spreadPercent === "number";
 }
 
 function calculateBiasCorrection(records: ForecastRecord[], horizon: "daily" | "weekly") {
@@ -511,9 +580,9 @@ function calculateConfidenceCalibration(records: ForecastRecord[]): BitcoinForec
   });
 }
 
-function calculateDataQuality(derivatives: BitcoinForecast["derivatives"], onChain: BitcoinForecast["onChain"], hasIntradayData: boolean): BitcoinForecast["dataQuality"] {
-  const missingSources = [!derivatives && "Derivatives", !onChain && "On-chain", !hasIntradayData && "Intraday"].filter((source): source is string => Boolean(source));
-  return { score: Math.max(50, 100 - missingSources.length * 16), missingSources };
+function calculateDataQuality(derivatives: BitcoinForecast["derivatives"], onChain: BitcoinForecast["onChain"], hasIntradayData: boolean, hasMicrostructure: boolean): BitcoinForecast["dataQuality"] {
+  const missingSources = [!derivatives && "Derivatives", !onChain && "On-chain", !hasIntradayData && "Intraday", !hasMicrostructure && "Market depth"].filter((source): source is string => Boolean(source));
+  return { score: Math.max(50, 100 - missingSources.length * 12), missingSources };
 }
 
 function formatTimeframeAlignment(alignment: BitcoinForecast["multiTimeframe"]["alignment"]) {

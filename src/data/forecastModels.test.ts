@@ -7,7 +7,9 @@ import {
   calculateProbabilisticRange,
   calculateRangeCalibration,
   detectMarketRegime,
-  evaluateForecastBenchmark
+  evaluateFeatureAblation,
+  evaluateForecastBenchmark,
+  getAutoExcludedFeatures
 } from "./forecastModels";
 import type { BitcoinCandle } from "../types/forecast";
 
@@ -150,5 +152,14 @@ describe("daily forecast ensemble", () => {
 
     expect(adjustment).toBeGreaterThanOrEqual(-0.007);
     expect(adjustment).toBeLessThanOrEqual(0.007);
+  });
+
+  it("uses a time-ordered ablation test before excluding a feature", () => {
+    const results = evaluateFeatureAblation(makeCandles(90));
+
+    expect(results).toHaveLength(4);
+    expect(results.map((result) => result.id)).toEqual(expect.arrayContaining(["technical", "trend", "meanReversion", "volume"]));
+    expect(results.every((result) => result.evaluatedDays > 0 && Number.isFinite(result.meanAbsolutePercentError))).toBe(true);
+    expect(getAutoExcludedFeatures(results.filter((result) => result.status !== "paused"))).toEqual([]);
   });
 });

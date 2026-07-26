@@ -5,5 +5,9 @@ interface Window {
       load(): Promise<string | null>;
       save(value: string): Promise<void>;
     };
+    microstructureStorage: {
+      load(): Promise<string | null>;
+      save(value: string): Promise<void>;
+    };
   };
 }

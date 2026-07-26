@@ -27,6 +27,7 @@ export interface ForecastRecord {
   modelWeights?: Partial<Record<ForecastModelId, number>>;
   derivativeData?: DerivativeMarketData;
   onChainData?: OnChainMarketData;
+  microstructureData?: MicrostructureSnapshot;
   hasForecastEdge?: boolean;
   multiTimeframe?: MultiTimeframeSignal;
   decision?: ForecastDecision;
@@ -120,6 +121,29 @@ export interface OnChainMarketData {
   asOfDate: string;
 }
 
+export interface MicrostructureSnapshot {
+  assetSymbol: ForecastAsset;
+  capturedAt: string;
+  bidDepthUsd: number;
+  askDepthUsd: number;
+  orderBookImbalance: number;
+  tradeFlowImbalance: number | null;
+  spreadPercent: number;
+  tradeCount: number;
+}
+
+export type ForecastFeatureId = "technical" | "trend" | "meanReversion" | "volume";
+
+export interface FeatureAblationResult {
+  id: ForecastFeatureId;
+  label: string;
+  meanAbsolutePercentError: number;
+  directionalAccuracy: number;
+  errorDelta: number;
+  evaluatedDays: number;
+  status: "helpful" | "neutral" | "paused" | "learning";
+}
+
 export interface ForecastPerformance {
   meanAbsolutePercentError: number;
   directionalAccuracy: number;
@@ -164,6 +188,9 @@ export interface BitcoinForecast {
   rangeCalibration: RangeCalibration;
   derivatives: DerivativeMarketData | null;
   onChain: OnChainMarketData | null;
+  microstructure: MicrostructureSnapshot | null;
+  microstructureSamples: number;
+  featureAblation: FeatureAblationResult[];
   macroRisk: MacroEventRisk | null;
   confidenceCalibration: ConfidenceCalibrationBand[];
   dataQuality: ForecastDataQuality;

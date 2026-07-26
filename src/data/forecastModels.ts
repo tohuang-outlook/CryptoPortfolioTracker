@@ -6,6 +6,8 @@ import type {
   ForecastModelPerformance,
   ForecastAsset,
   ForecastDecision,
+  FeatureAblationResult,
+  ForecastFeatureId,
   MarketRegime,
   MarketRegimeId,
   MultiTimeframeSignal,
@@ -19,14 +21,14 @@ const BACKTEST_WINDOW = 60;
 type ModelDefinition = {
   id: ForecastModelId;
   label: string;
-  predictReturn: (candles: BitcoinCandle[]) => number;
+  predictReturn: (candles: BitcoinCandle[], excludedFeatures?: readonly ForecastFeatureId[]) => number;
 };
 
 const models: ModelDefinition[] = [
   {
     id: "technical",
     label: "Technical signals",
-    predictReturn(candles) {
+    predictReturn(candles, excludedFeatures = []) {
       const closes = candles.map((candle) => candle.close);
       const volumes = candles.map((candle) => candle.volume);
       const currentClose = closes[closes.length - 1];
@@ -36,8 +38,9 @@ const models: ModelDefinition[] = [
       const dailyReturn = currentClose / closes[closes.length - 2] - 1;
       const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
 
+      const volumeConfirmation = excludedFeatures.includes("volume") ? 0 : calculateVolumeConfirmation(dailyReturn, volumeRatio);
       return clamp(
-        trend * 0.7 + macd * 0.55 - ((rsi - 50) / 100) * 0.012 + calculateVolumeConfirmation(dailyReturn, volumeRatio),
+        trend * 0.7 + macd * 0.55 - ((rsi - 50) / 100) * 0.012 + volumeConfirmation,
         -0.12,
         0.12
       );
@@ -66,14 +69,19 @@ const models: ModelDefinition[] = [
   }
 ];
 
-export function buildDailyEnsemble(candles: BitcoinCandle[], asset: ForecastAsset = "BTC") {
+export function buildDailyEnsemble(
+  candles: BitcoinCandle[],
+  asset: ForecastAsset = "BTC",
+  excludedFeatures: readonly ForecastFeatureId[] = []
+) {
   if (candles.length < MINIMUM_HISTORY) {
     throw new Error("Not enough Bitcoin history to build the forecast ensemble");
   }
 
   const marketRegime = detectMarketRegime(candles);
-  const leaderboard = backtestModels(candles, marketRegime.id, asset);
-  const currentReturns = models.map((model) => ({ id: model.id, value: model.predictReturn(candles) }));
+  const activeModels = models.filter((model) => !excludedFeatures.includes(model.id));
+  const leaderboard = backtestModels(candles, marketRegime.id, asset, excludedFeatures);
+  const currentReturns = activeModels.map((model) => ({ id: model.id, value: model.predictReturn(candles, excludedFeatures) }));
   const expectedReturn = currentReturns.reduce(
     (sum, prediction) => sum + prediction.value * leaderboard.find((model) => model.id === prediction.id)!.weight,
     0
@@ -94,7 +102,11 @@ export function buildDailyEnsemble(candles: BitcoinCandle[], asset: ForecastAsse
   };
 }
 
-export function evaluateForecastBenchmark(candles: BitcoinCandle[], asset: ForecastAsset = "BTC"): ForecastBenchmark {
+export function evaluateForecastBenchmark(
+  candles: BitcoinCandle[],
+  asset: ForecastAsset = "BTC",
+  excludedFeatures: readonly ForecastFeatureId[] = []
+): ForecastBenchmark {
   const startIndex = Math.max(MINIMUM_HISTORY + 12, candles.length - BACKTEST_WINDOW - 1);
   const ensembleOutcomes: ForecastOutcome[] = [];
   const naiveOutcomes: ForecastOutcome[] = [];
@@ -103,11 +115,11 @@ export function evaluateForecastBenchmark(candles: BitcoinCandle[], asset: Forec
   for (let index = startIndex; index < candles.length - 1; index += 1) {
     const history = candles.slice(0, index + 1);
     const baseClose = history[history.length - 1].close;
-    const ensembleReturn = buildDailyEnsemble(history, asset).expectedReturn;
+    const ensembleReturn = buildDailyEnsemble(history, asset, excludedFeatures).expectedReturn;
     const actualClose = candles[index + 1].close;
     ensembleOutcomes.push(makeOutcome(baseClose, baseClose * (1 + ensembleReturn), actualClose));
     naiveOutcomes.push(makeOutcome(baseClose, baseClose, actualClose));
-    trendOutcomes.push(makeOutcome(baseClose, baseClose * (1 + models[1].predictReturn(history)), actualClose));
+    trendOutcomes.push(makeOutcome(baseClose, baseClose * (1 + models.find((model) => model.id === "trend")!.predictReturn(history)), actualClose));
   }
 
   const ensemble = summarizeOutcomes(ensembleOutcomes);
@@ -124,6 +136,63 @@ export function evaluateForecastBenchmark(candles: BitcoinCandle[], asset: Forec
   };
 }
 
+export function evaluateFeatureAblation(candles: BitcoinCandle[], asset: ForecastAsset = "BTC"): FeatureAblationResult[] {
+  const featureDefinitions: Array<{ id: ForecastFeatureId; label: string }> = [
+    { id: "technical", label: "Technical signals" },
+    { id: "trend", label: "Trend follow" },
+    { id: "meanReversion", label: "Mean reversion" },
+    { id: "volume", label: "Volume confirmation" }
+  ];
+  const startIndex = Math.max(MINIMUM_HISTORY + 12, candles.length - 46);
+  const baselineOutcomes: ForecastOutcome[] = [];
+  const outcomesByFeature = new Map<ForecastFeatureId, ForecastOutcome[]>(
+    featureDefinitions.map((feature) => [feature.id, []])
+  );
+
+  for (let index = startIndex; index < candles.length - 1; index += 1) {
+    const history = candles.slice(0, index + 1);
+    const baseClose = history[history.length - 1].close;
+    const actualClose = candles[index + 1].close;
+    baselineOutcomes.push(makeOutcome(baseClose, baseClose * (1 + buildDailyEnsemble(history, asset).expectedReturn), actualClose));
+    featureDefinitions.forEach((feature) => {
+      const withoutFeature = buildDailyEnsemble(history, asset, [feature.id]).expectedReturn;
+      outcomesByFeature.get(feature.id)!.push(makeOutcome(baseClose, baseClose * (1 + withoutFeature), actualClose));
+    });
+  }
+
+  const baseline = summarizeOutcomes(baselineOutcomes);
+  const results = featureDefinitions.map((feature) => {
+    const result = summarizeOutcomes(outcomesByFeature.get(feature.id)!);
+    const errorDelta = result.meanAbsolutePercentError - baseline.meanAbsolutePercentError;
+    const directionalDelta = result.directionalAccuracy - baseline.directionalAccuracy;
+    const status = result.evaluatedDays < 24
+      ? "learning" as const
+      : errorDelta > 0.04 || directionalDelta < -2
+        ? "helpful" as const
+        : errorDelta < -0.04 && directionalDelta >= -1
+          ? "paused" as const
+          : "neutral" as const;
+    return { ...feature, ...result, errorDelta, status };
+  });
+
+  // Keep at least two independent price models active even when a short sample is unusually noisy.
+  const corePauseIds = results
+    .filter((result) => result.status === "paused" && result.id !== "volume")
+    .sort((left, right) => left.errorDelta - right.errorDelta)
+    .slice(0, 1)
+    .map((result) => result.id);
+  return results.map((result) => result.status === "paused" && result.id !== "volume" && !corePauseIds.includes(result.id)
+    ? { ...result, status: "neutral" as const }
+    : result
+  );
+}
+
+export function getAutoExcludedFeatures(results: FeatureAblationResult[]): ForecastFeatureId[] {
+  return results
+    .filter((result) => result.status === "paused" && result.evaluatedDays >= 24)
+    .map((result) => result.id);
+}
+
 export function calculateDerivativeAdjustment(data: DerivativeMarketData | null, priceTrend: number) {
   if (!data) return 0;
 
@@ -136,17 +205,23 @@ export function calculateDerivativeAdjustment(data: DerivativeMarketData | null,
   return clamp(fundingAdjustment + openInterestAdjustment, -0.007, 0.007);
 }
 
-function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId, asset: ForecastAsset = "BTC"): ForecastModelPerformance[] {
+function backtestModels(
+  candles: BitcoinCandle[],
+  activeRegime: MarketRegimeId,
+  asset: ForecastAsset = "BTC",
+  excludedFeatures: readonly ForecastFeatureId[] = []
+): ForecastModelPerformance[] {
   // Reserve the newest 14 closes as a holdout set instead of fitting weights to them.
   const trainingEnd = Math.min(candles.length, Math.max(MINIMUM_HISTORY + 1, candles.length - 14));
   const startIndex = Math.max(MINIMUM_HISTORY - 1, trainingEnd - BACKTEST_WINDOW - 1);
-  const samples = models.map((model) => {
+  const activeModels = models.filter((model) => !excludedFeatures.includes(model.id));
+  const samples = activeModels.map((model) => {
     const outcomes: Array<{ absoluteError: number; correctDirection: boolean; regime: MarketRegimeId }> = [];
 
     for (let index = startIndex; index < trainingEnd - 1; index += 1) {
       const history = candles.slice(0, index + 1);
       const baseClose = history[history.length - 1].close;
-      const predictedClose = baseClose * (1 + model.predictReturn(history));
+      const predictedClose = baseClose * (1 + model.predictReturn(history, excludedFeatures));
       const actualClose = candles[index + 1].close;
       outcomes.push({
         absoluteError: Math.abs(actualClose - predictedClose) / actualClose,
@@ -184,7 +259,7 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId, 
     const statusMultiplier = statuses[index] === "paused" ? 0 : statuses[index] === "reduced" ? 0.35 : 1;
     return regimeMultipliers[sample.id] * profile.modelMultipliers[sample.id] / Math.max(sample.meanAbsolutePercentError, 0.05) * (0.8 + sample.directionalAccuracy / 250) * statusMultiplier;
   });
-  const totalScore = average(scores) * scores.length;
+  const totalScore = scores.reduce((total, score) => total + score, 0);
 
   return samples
     .map((sample, index) => ({
@@ -192,7 +267,7 @@ function backtestModels(candles: BitcoinCandle[], activeRegime: MarketRegimeId, 
       label: sample.label,
       meanAbsolutePercentError: sample.meanAbsolutePercentError,
       directionalAccuracy: sample.directionalAccuracy,
-      weight: scores[index] / totalScore,
+      weight: totalScore > 0 ? scores[index] / totalScore : 1 / samples.length,
       evaluatedDays: sample.evaluatedDays,
       status: statuses[index]
     }))

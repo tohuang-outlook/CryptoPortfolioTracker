@@ -64,9 +64,12 @@ for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
 }
 
 if (!buildSucceeded) {
-  throw new Error(
-    "Mac icon generation failed after 3 attempts. build-assets/mac/icon.icns is missing or empty."
-  );
+  if (hasContent(outputIcon)) {
+    console.warn("[icon:mac] using the last verified build/icon.icns after a macOS icon-tool failure.");
+    console.log(`[icon:mac] ready: ${outputIcon}`);
+    process.exit(0);
+  }
+  throw new Error("Mac icon generation failed after 3 attempts and no usable build/icon.icns fallback exists.");
 }
 
 mkdirSync(buildDir, { recursive: true });

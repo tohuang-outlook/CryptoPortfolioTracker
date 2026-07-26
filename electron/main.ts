@@ -14,6 +14,7 @@ const rendererUrl = process.env.VITE_DEV_SERVER_URL;
 const preloadPath = path.join(__dirname, "../../electron/preload.cjs");
 const rendererHtmlPath = path.join(__dirname, "../../dist/index.html");
 const forecastFileName = "bitcoin-forecast-records.json";
+const microstructureFileName = "forecast-microstructure-snapshots.json";
 const launchAgentLabel = "com.tonyhuang.cryptoportfoliotracker.forecast";
 
 function createMainWindow() {
@@ -72,28 +73,42 @@ app.on("window-all-closed", () => {
 
 function registerForecastStorageIpc() {
   ipcMain.handle("forecast-storage:load", async () => {
-    try {
-      return await readFile(getForecastFilePath(), "utf8");
-    } catch {
-      return null;
-    }
+    return readStoredValue(getForecastFilePath());
   });
 
   ipcMain.handle("forecast-storage:save", async (_event, value: unknown) => {
-    if (typeof value !== "string") {
-      throw new Error("Forecast storage accepts serialized records only.");
-    }
-
-    const filePath = getForecastFilePath();
-    await mkdir(path.dirname(filePath), { recursive: true });
-    const temporaryPath = `${filePath}.tmp`;
-    await writeFile(temporaryPath, value, "utf8");
-    await rename(temporaryPath, filePath);
+    return saveStoredValue(getForecastFilePath(), value);
   });
+
+  ipcMain.handle("microstructure-storage:load", () => readStoredValue(getMicrostructureFilePath()));
+  ipcMain.handle("microstructure-storage:save", async (_event, value: unknown) => saveStoredValue(getMicrostructureFilePath(), value));
 }
 
 function getForecastFilePath() {
   return path.join(app.getPath("userData"), forecastFileName);
+}
+
+function getMicrostructureFilePath() {
+  return path.join(app.getPath("userData"), microstructureFileName);
+}
+
+async function readStoredValue(filePath: string) {
+  try {
+    return await readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+async function saveStoredValue(filePath: string, value: unknown) {
+  if (typeof value !== "string") {
+    throw new Error("Forecast storage accepts serialized records only.");
+  }
+
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.tmp`;
+  await writeFile(temporaryPath, value, "utf8");
+  await rename(temporaryPath, filePath);
 }
 
 async function registerForecastLaunchAgent() {
