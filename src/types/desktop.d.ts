@@ -9,5 +9,9 @@ interface Window {
       load(): Promise<string | null>;
       save(value: string): Promise<void>;
     };
+    candleHistoryStorage: {
+      load(): Promise<string | null>;
+      save(value: string): Promise<void>;
+    };
   };
 }

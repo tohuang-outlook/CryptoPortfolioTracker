@@ -164,6 +164,24 @@ export function BitcoinForecastDashboard() {
           <span className="forecast-status-card__tag">{formatTimeframeTrend(forecast.multiTimeframe.hourlyTrend, "1H")} · {formatTimeframeTrend(forecast.multiTimeframe.fourHourTrend, "4H")} · {formatTimeframeTrend(forecast.multiTimeframe.dailyTrend, "1D")}</span>
         </article>
         <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Direction model")}</p>
+          <h2>{t(forecast.directionModel.direction)}</h2>
+          <p>{t("Up probability {up}, down probability {down}; the classifier is checked with walk-forward closes.", {
+            up: `${(forecast.directionModel.probabilityUp * 100).toFixed(0)}%`,
+            down: `${(forecast.directionModel.probabilityDown * 100).toFixed(0)}%`
+          })}</p>
+          <span className="forecast-status-card__tag">{t("{accuracy}% directional accuracy across {days} days", {
+            accuracy: forecast.directionModel.directionalAccuracy.toFixed(0),
+            days: forecast.directionModel.evaluatedDays
+          })}</span>
+        </article>
+        <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Volatility model")}</p>
+          <h2>±{forecast.volatilityModel.expectedDailyMovePercent.toFixed(1)}%</h2>
+          <p>{t("Expected daily movement blends recent 7D, 21D, and 60D realized volatility before setting the forecast range.")}</p>
+          <span className="forecast-status-card__tag">{t("{outlook} outlook", { outlook: t(volatilityOutlookLabel(forecast.volatilityModel.outlook)) })}</span>
+        </article>
+        <article className="panel forecast-status-card">
           <p className="panel__eyebrow">{t("Range calibration")}</p>
           <h2>{forecast.rangeCalibration.observedCoverage === null ? t("Learning") : `${(forecast.rangeCalibration.observedCoverage * 100).toFixed(0)}% ${t("coverage")}`}</h2>
           <p>{forecast.rangeCalibration.observedCoverage === null
@@ -386,6 +404,10 @@ function decisionLabel(status: "trade" | "watch" | "noEdge") {
 
 function timeframeAlignmentLabel(alignment: "bullish" | "bearish" | "neutral" | "mixed" | "unavailable") {
   return { bullish: "Aligned bullish", bearish: "Aligned bearish", neutral: "Neutral", mixed: "Mixed", unavailable: "Unavailable" }[alignment];
+}
+
+function volatilityOutlookLabel(outlook: "calm" | "normal" | "elevated") {
+  return { calm: "Calm", normal: "Normal", elevated: "Elevated" }[outlook];
 }
 
 function timeframeSignalDetail(alignment: "bullish" | "bearish" | "neutral" | "mixed" | "unavailable") {

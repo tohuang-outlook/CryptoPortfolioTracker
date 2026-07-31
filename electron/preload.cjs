@@ -9,5 +9,9 @@ contextBridge.exposeInMainWorld("desktopApp", {
   microstructureStorage: {
     load: () => ipcRenderer.invoke("microstructure-storage:load"),
     save: (value) => ipcRenderer.invoke("microstructure-storage:save", value)
+  },
+  candleHistoryStorage: {
+    load: () => ipcRenderer.invoke("candle-history-storage:load"),
+    save: (value) => ipcRenderer.invoke("candle-history-storage:save", value)
   }
 });

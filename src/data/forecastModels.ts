@@ -6,13 +6,15 @@ import type {
   ForecastModelPerformance,
   ForecastAsset,
   ForecastDecision,
+  DirectionModelForecast,
   FeatureAblationResult,
   ForecastFeatureId,
   MarketRegime,
   MarketRegimeId,
   MultiTimeframeSignal,
   RangeCalibration,
-  TimeframeAlignment
+  TimeframeAlignment,
+  VolatilityModelForecast
 } from "../types/forecast.js";
 
 const MINIMUM_HISTORY = 31;
@@ -368,6 +370,48 @@ export function calculateProbabilisticRange({
   return clamp(uncertainty * regimeMultiplier * calibrationMultiplier * macroMultiplier, 0.025, 0.2);
 }
 
+export function buildDirectionModel(candles: BitcoinCandle[], returnModelExpectedReturn: number): DirectionModelForecast {
+  const score = calculateDirectionScore(candles, returnModelExpectedReturn);
+  const probabilities = scoreToDirectionProbabilities(score);
+  const outcomes: Array<{ predicted: "Bullish" | "Bearish" | "Neutral"; actual: number }> = [];
+  const startIndex = Math.max(MINIMUM_HISTORY, candles.length - BACKTEST_WINDOW - 1);
+
+  for (let index = startIndex; index < candles.length - 1; index += 1) {
+    const history = candles.slice(0, index + 1);
+    outcomes.push({
+      predicted: directionFromProbabilities(scoreToDirectionProbabilities(calculateDirectionScore(history, 0))),
+      actual: candles[index + 1].close / candles[index].close - 1
+    });
+  }
+
+  const directionalAccuracy = outcomes.length
+    ? outcomes.filter(({ predicted, actual }) => predicted === directionFromReturn(actual)).length / outcomes.length * 100
+    : 50;
+
+  return {
+    ...probabilities,
+    direction: directionFromProbabilities(probabilities),
+    directionalAccuracy,
+    evaluatedDays: outcomes.length
+  };
+}
+
+export function buildVolatilityModel(candles: BitcoinCandle[]): VolatilityModelForecast {
+  const closes = candles.map((candle) => candle.close);
+  const shortTerm = calculateVolatility(closes.slice(-8));
+  const mediumTerm = calculateVolatility(closes.slice(-22));
+  const longTerm = calculateVolatility(closes.slice(-61));
+  const expectedDailyMove = clamp(shortTerm * 0.5 + mediumTerm * 0.34 + longTerm * 0.16, 0.012, 0.18);
+  const baseline = Math.max(mediumTerm, longTerm, 0.001);
+
+  return {
+    expectedDailyMovePercent: expectedDailyMove * 100,
+    shortTermVolatilityPercent: shortTerm * 100,
+    mediumTermVolatilityPercent: mediumTerm * 100,
+    outlook: expectedDailyMove > baseline * 1.28 ? "elevated" : expectedDailyMove < baseline * 0.78 ? "calm" : "normal"
+  };
+}
+
 export function calculateEnsembleConfidencePenalty(marketRegime: MarketRegimeId, modelDispersion: number) {
   const regimePenalty = marketRegime === "volatile" ? 9 : marketRegime === "downtrend" ? 3 : marketRegime === "uptrend" ? 1 : 0;
   return clamp(regimePenalty + modelDispersion * 220, 0, 14);
@@ -421,28 +465,93 @@ export function buildForecastDecision({
   confidence,
   hasForecastEdge,
   dataQualityScore,
-  multiTimeframe
+  multiTimeframe,
+  directionModel,
+  returnDirection,
+  volatilityModel
 }: {
   expectedReturn: number;
   confidence: number;
   hasForecastEdge: boolean;
   dataQualityScore: number;
   multiTimeframe: MultiTimeframeSignal;
+  directionModel?: DirectionModelForecast;
+  returnDirection?: "Bullish" | "Bearish" | "Neutral";
+  volatilityModel?: VolatilityModelForecast;
 }): ForecastDecision {
   const isAligned = multiTimeframe.alignment === "bullish" || multiTimeframe.alignment === "bearish";
+  const resolvedDirectionModel = directionModel ?? buildDirectionModelFromReturn(expectedReturn);
+  const resolvedReturnDirection = returnDirection ?? directionFromReturn(expectedReturn);
+  const resolvedVolatilityModel = volatilityModel ?? { expectedDailyMovePercent: 0, shortTermVolatilityPercent: 0, mediumTermVolatilityPercent: 0, outlook: "normal" as const };
+  const directionAgreement = resolvedDirectionModel.direction === resolvedReturnDirection && resolvedDirectionModel.direction !== "Neutral";
+  const directionProbability = Math.max(resolvedDirectionModel.probabilityUp, resolvedDirectionModel.probabilityDown);
+  const volatilityPenalty = resolvedVolatilityModel.outlook === "elevated" ? 7 : 0;
   const score = Math.round(clamp(
-    confidence + (hasForecastEdge ? 9 : -24) + multiTimeframe.confidenceAdjustment + (dataQualityScore - 80) * 0.2,
+    confidence + (hasForecastEdge ? 9 : -24) + multiTimeframe.confidenceAdjustment + (dataQualityScore - 80) * 0.2 +
+      (directionAgreement ? 6 : -12) + (directionProbability - 0.5) * 28 - volatilityPenalty,
     0,
     100
   ));
 
-  if (hasForecastEdge && isAligned && Math.abs(expectedReturn) >= 0.0045 && score >= 68) {
-    return { status: "trade", score, detail: "Timeframes align and the ensemble has a validated edge." };
+  if (hasForecastEdge && isAligned && directionAgreement && directionProbability >= 0.56 && Math.abs(expectedReturn) >= 0.0045 && score >= 68) {
+    return { status: "trade", score, detail: "Direction, return, and timeframe models agree with a validated edge." };
   }
-  if (!hasForecastEdge || Math.abs(expectedReturn) < 0.0025 || score < 45) {
+  if (!hasForecastEdge || !directionAgreement || directionProbability < 0.52 || Math.abs(expectedReturn) < 0.0025 || score < 45) {
     return { status: "noEdge", score, detail: "No validated edge. The dashboard remains in observation mode." };
   }
   return { status: "watch", score, detail: "A signal is forming, but confidence or timeframe alignment is incomplete." };
+}
+
+function buildDirectionModelFromReturn(expectedReturn: number): DirectionModelForecast {
+  const direction = directionFromReturn(expectedReturn);
+  const strength = clamp(Math.abs(expectedReturn) / 0.02, 0, 1);
+  const probabilityNeutral = 0.3 - strength * 0.16;
+  const probabilityUp = direction === "Bullish" ? 1 - probabilityNeutral - 0.08 : direction === "Bearish" ? 0.08 : 0.35;
+  return {
+    direction,
+    probabilityUp,
+    probabilityDown: 1 - probabilityNeutral - probabilityUp,
+    probabilityNeutral,
+    directionalAccuracy: 50,
+    evaluatedDays: 0
+  };
+}
+
+function calculateDirectionScore(candles: BitcoinCandle[], returnModelExpectedReturn: number) {
+  const closes = candles.map((candle) => candle.close);
+  const volumes = candles.map((candle) => candle.volume);
+  const current = closes[closes.length - 1];
+  const shortTrend = average(closes.slice(-7)) / average(closes.slice(-30)) - 1;
+  const momentum = current / closes[closes.length - 8] - 1;
+  const rsiSignal = (50 - calculateRsi(closes.slice(-15))) / 50;
+  const volumeRatio = volumes[volumes.length - 1] / Math.max(average(volumes.slice(-21, -1)), 1);
+  const volatility = Math.max(calculateVolatility(closes.slice(-22)), 0.004);
+  return clamp(
+    returnModelExpectedReturn / volatility * 0.72 + shortTrend / volatility * 0.46 + momentum / volatility * 0.22 + rsiSignal * 0.18 + (volumeRatio - 1) * Math.sign(shortTrend || momentum) * 0.08,
+    -3.2,
+    3.2
+  );
+}
+
+function scoreToDirectionProbabilities(score: number) {
+  const directionalStrength = 1 / (1 + Math.exp(-score));
+  const neutral = clamp(0.34 - Math.abs(score) * 0.055, 0.12, 0.34);
+  const remaining = 1 - neutral;
+  return {
+    probabilityUp: remaining * directionalStrength,
+    probabilityDown: remaining * (1 - directionalStrength),
+    probabilityNeutral: neutral
+  };
+}
+
+function directionFromProbabilities(probabilities: Pick<DirectionModelForecast, "probabilityUp" | "probabilityDown" | "probabilityNeutral">): "Bullish" | "Bearish" | "Neutral" {
+  if (probabilities.probabilityUp >= 0.54) return "Bullish";
+  if (probabilities.probabilityDown >= 0.54) return "Bearish";
+  return "Neutral";
+}
+
+function directionFromReturn(value: number): "Bullish" | "Bearish" | "Neutral" {
+  return value > 0.002 ? "Bullish" : value < -0.002 ? "Bearish" : "Neutral";
 }
 
 export function aggregateCandles(candles: BitcoinCandle[], bucketHours: number): BitcoinCandle[] {

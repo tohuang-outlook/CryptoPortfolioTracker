@@ -88,6 +88,22 @@ export interface ForecastDecision {
   detail: string;
 }
 
+export interface DirectionModelForecast {
+  direction: "Bullish" | "Bearish" | "Neutral";
+  probabilityUp: number;
+  probabilityDown: number;
+  probabilityNeutral: number;
+  directionalAccuracy: number;
+  evaluatedDays: number;
+}
+
+export interface VolatilityModelForecast {
+  expectedDailyMovePercent: number;
+  shortTermVolatilityPercent: number;
+  mediumTermVolatilityPercent: number;
+  outlook: "calm" | "normal" | "elevated";
+}
+
 export type ForecastModelId = "technical" | "trend" | "meanReversion";
 export type MarketRegimeId = "uptrend" | "downtrend" | "range" | "volatile";
 
@@ -180,6 +196,8 @@ export interface BitcoinForecast {
   expectedReturnPercent: number;
   direction: "Bullish" | "Bearish" | "Neutral";
   multiTimeframe: MultiTimeframeSignal;
+  directionModel: DirectionModelForecast;
+  volatilityModel: VolatilityModelForecast;
   decision: ForecastDecision;
   weeklyForecast: ForecastHorizon;
   signals: ForecastSignal[];

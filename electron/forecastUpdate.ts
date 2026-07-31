@@ -3,8 +3,10 @@ import path from "node:path";
 import {
   average,
   buildDailyEnsemble,
+  buildDirectionModel,
   buildForecastDecision,
   buildMultiTimeframeSignal,
+  buildVolatilityModel,
   calculateDerivativeAdjustment,
   calculateProbabilisticRange,
   calculateRangeCalibration,
@@ -16,6 +18,7 @@ import {
   evaluateForecastBenchmark,
   getAutoExcludedFeatures
 } from "../src/data/forecastModels.js";
+import { fetchRecentHourlyCandles, getDailyCandleHistory, parseCandleHistoryCache, type CandleHistoryCache } from "../src/data/candleHistoryService.js";
 import { detectForecastAlerts, type ForecastAlert } from "../src/data/forecastAlerts.js";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "../src/data/derivativesService.js";
 import { calculateOnChainAdjustment, fetchOnChainMetrics } from "../src/data/onChainService.js";
@@ -24,8 +27,8 @@ import type { DerivativeMarketData, ForecastAsset, ForecastDecision, Microstruct
 
 const FORECAST_FILE_NAME = "bitcoin-forecast-records.json";
 const MICROSTRUCTURE_FILE_NAME = "forecast-microstructure-snapshots.json";
+const CANDLE_HISTORY_FILE_NAME = "forecast-candle-history.json";
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const CANDLES_URL = "https://api.exchange.coinbase.com/products";
 const forecastAssets: ForecastAsset[] = ["BTC", "ETH", "ADA", "SOL", "XRP", "DOGE"];
 
 interface Candle {
@@ -64,16 +67,24 @@ interface RecordItem {
 export async function runForecastUpdate(userDataPath: string): Promise<ForecastAlert[]> {
   const filePath = path.join(userDataPath, FORECAST_FILE_NAME);
   const microstructureFilePath = path.join(userDataPath, MICROSTRUCTURE_FILE_NAME);
+  const candleHistoryFilePath = path.join(userDataPath, CANDLE_HISTORY_FILE_NAME);
   const existingRecords = await readRecords(filePath);
   let microstructureSnapshots = await readMicrostructureSnapshots(microstructureFilePath);
+  let candleHistory = parseCandleHistoryCache(await readStoredJson(candleHistoryFilePath));
   let nextRecords = existingRecords;
   const alerts: ForecastAlert[] = [];
-  const [btcCandles, ethCandles] = await Promise.all([fetchDailyCandles("BTC"), fetchDailyCandles("ETH")]);
+  const loadDailyHistory = async (assetSymbol: ForecastAsset) => {
+    const result = await getDailyCandleHistory(assetSymbol, candleHistory);
+    candleHistory = result.cache;
+    return result.candles;
+  };
+  const btcCandles = await loadDailyHistory("BTC");
+  const ethCandles = await loadDailyHistory("ETH");
 
   for (const assetSymbol of forecastAssets) {
     const [candles, hourlyCandles, derivatives, onChain, microstructure] = await Promise.all([
-      assetSymbol === "BTC" ? Promise.resolve(btcCandles) : assetSymbol === "ETH" ? Promise.resolve(ethCandles) : fetchDailyCandles(assetSymbol),
-      fetchHourlyCandles(assetSymbol).catch(() => []),
+      assetSymbol === "BTC" ? Promise.resolve(btcCandles) : assetSymbol === "ETH" ? Promise.resolve(ethCandles) : loadDailyHistory(assetSymbol),
+      fetchRecentHourlyCandles(assetSymbol).catch(() => []),
       fetchAssetDerivatives(assetSymbol),
       fetchOnChainMetrics(assetSymbol),
       fetchMicrostructureSnapshot(assetSymbol)
@@ -101,70 +112,8 @@ export async function runForecastUpdate(userDataPath: string): Promise<ForecastA
 
   await writeRecords(filePath, nextRecords);
   await writeMicrostructureSnapshots(microstructureFilePath, microstructureSnapshots);
+  await writeStoredJson(candleHistoryFilePath, candleHistory);
   return alerts;
-}
-
-async function fetchDailyCandles(assetSymbol: ForecastAsset): Promise<Candle[]> {
-  const end = new Date();
-  const start = new Date(end.getTime() - 120 * DAY_IN_MS);
-  const url = new URL(`${CANDLES_URL}/${assetSymbol}-USD/candles`);
-  url.searchParams.set("start", start.toISOString());
-  url.searchParams.set("end", end.toISOString());
-  url.searchParams.set("granularity", "86400");
-
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Coinbase daily candle request failed");
-
-  const data = (await response.json()) as unknown;
-  if (!Array.isArray(data)) throw new Error("Malformed Coinbase candle payload");
-
-  const now = Date.now();
-  const candles = data
-    .map(readCandle)
-    .filter((value): value is Candle => value !== null)
-    .filter((candle) => candle.timestamp + DAY_IN_MS <= now)
-    .sort((left, right) => left.timestamp - right.timestamp);
-
-  if (candles.length < 35) throw new Error(`Not enough ${assetSymbol} history for forecast update`);
-  return candles;
-}
-
-async function fetchHourlyCandles(assetSymbol: ForecastAsset): Promise<Candle[]> {
-  const end = new Date();
-  const start = new Date(end.getTime() - 12 * DAY_IN_MS);
-  const url = new URL(`${CANDLES_URL}/${assetSymbol}-USD/candles`);
-  url.searchParams.set("start", start.toISOString());
-  url.searchParams.set("end", end.toISOString());
-  url.searchParams.set("granularity", "3600");
-
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Coinbase hourly candle request failed");
-
-  const data = (await response.json()) as unknown;
-  if (!Array.isArray(data)) throw new Error("Malformed Coinbase hourly candle payload");
-
-  const now = Date.now();
-  return data
-    .map(readCandle)
-    .filter((value): value is Candle => value !== null)
-    .filter((candle) => candle.timestamp + 60 * 60 * 1000 <= now)
-    .sort((left, right) => left.timestamp - right.timestamp);
-}
-
-function readCandle(value: unknown): Candle | null {
-  if (!Array.isArray(value) || value.length < 6) return null;
-  const [timestamp, low, high, open, close, volume] = value;
-  if (![timestamp, low, high, open, close, volume].every((item) => typeof item === "number" && Number.isFinite(item))) return null;
-
-  return {
-    date: new Date(timestamp * 1000).toISOString().slice(0, 10),
-    timestamp: timestamp * 1000,
-    open,
-    high,
-    low,
-    close,
-    volume
-  };
 }
 
 function reconcileRecords(records: RecordItem[], candles: Candle[]) {
@@ -195,11 +144,17 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
   const dailyCalibration = calculateRangeCalibration(records, "daily");
   const weeklyCalibration = calculateRangeCalibration(records, "weekly");
 
-  const dailyExpectedReturn = clamp(
+  const rawDailyExpectedReturn = clamp(
     ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trend) + calculateOnChainAdjustment(onChain ?? null) + marketAdjustment + multiTimeframe.adjustment + calculateMicrostructureAdjustment(microstructure, microstructureSnapshots) + calculateBias(records, "daily"),
     -0.12,
     0.12
   );
+  const directionModel = buildDirectionModel(candles, rawDailyExpectedReturn);
+  const volatilityModel = buildVolatilityModel(candles);
+  const rawDirection = getDirection(rawDailyExpectedReturn, 0.003);
+  const dailyExpectedReturn = directionModel.direction === rawDirection && rawDirection !== "Neutral"
+    ? rawDailyExpectedReturn
+    : rawDailyExpectedReturn * 0.45;
   const weeklyExpectedReturn = clamp(
     trend * 1.8 + macd * 1.35 - ((rsi - 50) / 100) * 0.035 + volumeConfirmation * 1.4 + calculateBias(records, "weekly"),
     -0.3,
@@ -209,7 +164,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
   const dailyConfidence = Math.round(clamp(
     72 - volatility * 450 - Math.abs(rsi - 50) * 0.28 + volumeConfidence(dailyReturn, volumeRatio) + multiTimeframe.confidenceAdjustment -
       (dailyCalibration.observedCoverage === null ? 0 : Math.abs(dailyCalibration.observedCoverage - dailyCalibration.targetCoverage) * 30) -
-      (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty,
+      (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty - (directionModel.direction === rawDirection ? 0 : 8) - (volatilityModel.outlook === "elevated" ? 4 : 0),
     38,
     78
   ));
@@ -218,7 +173,10 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
     confidence: dailyConfidence,
     hasForecastEdge: benchmark.hasEdge,
     dataQualityScore: calculateBackgroundDataQuality(derivatives, onChain, hourlyCandles.length >= 25, Boolean(microstructure)),
-    multiTimeframe
+    multiTimeframe,
+    directionModel,
+    returnDirection: getDirection(dailyExpectedReturn, 0.003),
+    volatilityModel
   });
   const dailyPrediction = makeRecord({
     assetSymbol,
@@ -227,7 +185,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
     baseClose: currentClose,
     expectedReturn: dailyExpectedReturn,
     rangePercent: calculateProbabilisticRange({
-      volatility,
+      volatility: Math.max(volatility, volatilityModel.expectedDailyMovePercent / 100),
       modelDispersion: ensemble.modelDispersion,
       marketRegime: ensemble.marketRegime.id,
       calibrationMultiplier: dailyCalibration.multiplier
@@ -324,6 +282,21 @@ async function writeRecords(filePath: string, records: RecordItem[]) {
   await mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.tmp`;
   await writeFile(temporaryPath, JSON.stringify(records), "utf8");
+  await rename(temporaryPath, filePath);
+}
+
+async function readStoredJson(filePath: string) {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8")) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+async function writeStoredJson(filePath: string, value: unknown) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.tmp`;
+  await writeFile(temporaryPath, JSON.stringify(value), "utf8");
   await rename(temporaryPath, filePath);
 }
 

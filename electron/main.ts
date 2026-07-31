@@ -15,6 +15,7 @@ const preloadPath = path.join(__dirname, "../../electron/preload.cjs");
 const rendererHtmlPath = path.join(__dirname, "../../dist/index.html");
 const forecastFileName = "bitcoin-forecast-records.json";
 const microstructureFileName = "forecast-microstructure-snapshots.json";
+const candleHistoryFileName = "forecast-candle-history.json";
 const launchAgentLabel = "com.tonyhuang.cryptoportfoliotracker.forecast";
 
 function createMainWindow() {
@@ -82,6 +83,8 @@ function registerForecastStorageIpc() {
 
   ipcMain.handle("microstructure-storage:load", () => readStoredValue(getMicrostructureFilePath()));
   ipcMain.handle("microstructure-storage:save", async (_event, value: unknown) => saveStoredValue(getMicrostructureFilePath(), value));
+  ipcMain.handle("candle-history-storage:load", () => readStoredValue(getCandleHistoryFilePath()));
+  ipcMain.handle("candle-history-storage:save", async (_event, value: unknown) => saveStoredValue(getCandleHistoryFilePath(), value));
 }
 
 function getForecastFilePath() {
@@ -90,6 +93,10 @@ function getForecastFilePath() {
 
 function getMicrostructureFilePath() {
   return path.join(app.getPath("userData"), microstructureFileName);
+}
+
+function getCandleHistoryFilePath() {
+  return path.join(app.getPath("userData"), candleHistoryFileName);
 }
 
 async function readStoredValue(filePath: string) {

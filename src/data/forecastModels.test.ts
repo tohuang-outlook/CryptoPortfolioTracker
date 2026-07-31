@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildDailyEnsemble,
+  buildDirectionModel,
   buildForecastDecision,
   buildMultiTimeframeSignal,
+  buildVolatilityModel,
   calculateDerivativeAdjustment,
   calculateProbabilisticRange,
   calculateRangeCalibration,
@@ -87,6 +89,25 @@ describe("daily forecast ensemble", () => {
     });
 
     expect(volatileRange).toBeGreaterThan(calmRange);
+  });
+
+  it("returns normalized direction probabilities and a walk-forward score", () => {
+    const direction = buildDirectionModel(makeCandles(100), 0.012);
+
+    expect(direction.probabilityUp + direction.probabilityDown + direction.probabilityNeutral).toBeCloseTo(1, 8);
+    expect(direction.probabilityUp).toBeGreaterThan(direction.probabilityDown);
+    expect(direction.evaluatedDays).toBeGreaterThan(0);
+  });
+
+  it("uses a higher expected move when recent closes are more volatile", () => {
+    const calm = buildVolatilityModel(makeCandles(100));
+    const volatileCandles = makeCandles(100).map((candle, index) => ({
+      ...candle,
+      close: candle.close * (index % 2 === 0 ? 1.09 : 0.91)
+    }));
+    const volatile = buildVolatilityModel(volatileCandles);
+
+    expect(volatile.expectedDailyMovePercent).toBeGreaterThan(calm.expectedDailyMovePercent);
   });
 
   it("uses aligned hourly, four-hour, and daily trends as a bounded confirmation signal", () => {
