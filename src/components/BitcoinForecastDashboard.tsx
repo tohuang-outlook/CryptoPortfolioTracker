@@ -158,6 +158,16 @@ export function BitcoinForecastDashboard() {
           <span className={`forecast-status-card__tag forecast-status-card__tag--${forecast.marketRegime.id}`}>{t("Weights are tuned for this market state")}</span>
         </article>
         <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Regime reliability")}</p>
+          <h2>{forecast.regimeReliability.isValidated ? t("Validated") : t("Learning")}</h2>
+          <p>{t("{regime} directional accuracy is {accuracy} across {days} walk-forward days.", {
+            regime: t(forecast.marketRegime.label),
+            accuracy: `${forecast.regimeReliability.directionalAccuracy.toFixed(0)}%`,
+            days: forecast.regimeReliability.evaluatedDays
+          })}</p>
+          <span className="forecast-status-card__tag">{t("Return weight: {weight}", { weight: `${(forecast.regimeReliability.returnMultiplier * 100).toFixed(0)}%` })}</span>
+        </article>
+        <article className="panel forecast-status-card">
           <p className="panel__eyebrow">{t("Multi-timeframe confirmation")}</p>
           <h2>{t(timeframeAlignmentLabel(forecast.multiTimeframe.alignment))}</h2>
           <p>{t(timeframeSignalDetail(forecast.multiTimeframe.alignment))}</p>
@@ -174,6 +184,17 @@ export function BitcoinForecastDashboard() {
             accuracy: forecast.directionModel.directionalAccuracy.toFixed(0),
             days: forecast.directionModel.evaluatedDays
           })}</span>
+        </article>
+        <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("Probability calibration")}</p>
+          <h2>{t(calibrationStatusLabel(forecast.directionCalibration.status))}</h2>
+          <p>{forecast.directionCalibration.status === "learning"
+            ? t("Calibration begins after 12 settled directional forecasts.")
+            : t("Average predicted probability {predicted}; realized direction accuracy {actual}.", {
+              predicted: `${(forecast.directionCalibration.averageProbability! * 100).toFixed(0)}%`,
+              actual: `${(forecast.directionCalibration.realizedAccuracy! * 100).toFixed(0)}%`
+            })}</p>
+          <span className="forecast-status-card__tag">{t("{count} settled directional forecasts", { count: forecast.directionCalibration.settledCount })}</span>
         </article>
         <article className="panel forecast-status-card">
           <p className="panel__eyebrow">{t("Volatility model")}</p>
@@ -408,6 +429,10 @@ function timeframeAlignmentLabel(alignment: "bullish" | "bearish" | "neutral" | 
 
 function volatilityOutlookLabel(outlook: "calm" | "normal" | "elevated") {
   return { calm: "Calm", normal: "Normal", elevated: "Elevated" }[outlook];
+}
+
+function calibrationStatusLabel(status: "learning" | "calibrated" | "caution") {
+  return { learning: "Learning", calibrated: "Calibrated", caution: "Caution" }[status];
 }
 
 function timeframeSignalDetail(alignment: "bullish" | "bearish" | "neutral" | "mixed" | "unavailable") {

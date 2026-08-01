@@ -5,6 +5,7 @@ import {
   buildForecastDecision,
   buildMultiTimeframeSignal,
   buildVolatilityModel,
+  calculateDirectionProbabilityCalibration,
   calculateDerivativeAdjustment,
   calculateProbabilisticRange,
   calculateRangeCalibration,
@@ -99,6 +100,36 @@ describe("daily forecast ensemble", () => {
     expect(direction.evaluatedDays).toBeGreaterThan(0);
   });
 
+  it("shrinks return influence until the active market regime has enough evidence", () => {
+    const result = buildDailyEnsemble(makeCandles(90));
+
+    expect(result.regimeReliability.marketRegime).toBe("uptrend");
+    expect(result.regimeReliability.returnMultiplier).toBeLessThanOrEqual(1.06);
+    expect(result.regimeReliability.confidencePenalty).toBeGreaterThanOrEqual(0);
+  });
+
+  it("calibrates direction probabilities from settled forecasts and flags poor calibration", () => {
+    const records = Array.from({ length: 12 }, (_, index) => ({
+      horizon: "daily" as const,
+      baseClose: 100,
+      actualClose: index < 9 ? 101 : 99,
+      directionModel: {
+        direction: "Bullish" as const,
+        probabilityUp: 0.72,
+        probabilityDown: 0.16,
+        probabilityNeutral: 0.12,
+        directionalAccuracy: 55,
+        evaluatedDays: 60
+      }
+    }));
+    const calibrated = calculateDirectionProbabilityCalibration(records);
+    const caution = calculateDirectionProbabilityCalibration(records.map((record) => ({ ...record, actualClose: 99 })));
+
+    expect(calibrated.status).toBe("calibrated");
+    expect(calibrated.realizedAccuracy).toBeCloseTo(0.75, 8);
+    expect(caution.status).toBe("caution");
+  });
+
   it("uses a higher expected move when recent closes are more volatile", () => {
     const calm = buildVolatilityModel(makeCandles(100));
     const volatileCandles = makeCandles(100).map((candle, index) => ({
@@ -136,6 +167,17 @@ describe("daily forecast ensemble", () => {
       hasForecastEdge: true,
       dataQualityScore: 100,
       multiTimeframe
+    }).status).toBe("noEdge");
+
+    expect(buildForecastDecision({
+      expectedReturn: 0.01,
+      confidence: 70,
+      hasForecastEdge: true,
+      dataQualityScore: 100,
+      multiTimeframe,
+      directionModel: { direction: "Bullish", probabilityUp: 0.72, probabilityDown: 0.16, probabilityNeutral: 0.12, directionalAccuracy: 60, evaluatedDays: 60 },
+      returnDirection: "Bullish",
+      directionCalibration: { settledCount: 20, averageProbability: 0.72, realizedAccuracy: 0.4, calibrationGap: 0.32, status: "caution" }
     }).status).toBe("noEdge");
   });
 

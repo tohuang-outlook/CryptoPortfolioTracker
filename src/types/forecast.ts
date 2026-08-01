@@ -30,6 +30,8 @@ export interface ForecastRecord {
   microstructureData?: MicrostructureSnapshot;
   hasForecastEdge?: boolean;
   multiTimeframe?: MultiTimeframeSignal;
+  directionModel?: DirectionModelForecast;
+  regimeReliability?: RegimeReliability;
   decision?: ForecastDecision;
 }
 
@@ -102,6 +104,24 @@ export interface VolatilityModelForecast {
   shortTermVolatilityPercent: number;
   mediumTermVolatilityPercent: number;
   outlook: "calm" | "normal" | "elevated";
+}
+
+export interface RegimeReliability {
+  marketRegime: MarketRegimeId;
+  evaluatedDays: number;
+  directionalAccuracy: number;
+  meanAbsolutePercentError: number;
+  returnMultiplier: number;
+  confidencePenalty: number;
+  isValidated: boolean;
+}
+
+export interface DirectionProbabilityCalibration {
+  settledCount: number;
+  averageProbability: number | null;
+  realizedAccuracy: number | null;
+  calibrationGap: number | null;
+  status: "learning" | "calibrated" | "caution";
 }
 
 export type ForecastModelId = "technical" | "trend" | "meanReversion";
@@ -198,6 +218,8 @@ export interface BitcoinForecast {
   multiTimeframe: MultiTimeframeSignal;
   directionModel: DirectionModelForecast;
   volatilityModel: VolatilityModelForecast;
+  regimeReliability: RegimeReliability;
+  directionCalibration: DirectionProbabilityCalibration;
   decision: ForecastDecision;
   weeklyForecast: ForecastHorizon;
   signals: ForecastSignal[];

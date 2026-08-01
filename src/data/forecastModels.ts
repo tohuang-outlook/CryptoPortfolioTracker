@@ -6,6 +6,7 @@ import type {
   ForecastModelPerformance,
   ForecastAsset,
   ForecastDecision,
+  DirectionProbabilityCalibration,
   DirectionModelForecast,
   FeatureAblationResult,
   ForecastFeatureId,
@@ -14,7 +15,8 @@ import type {
   MultiTimeframeSignal,
   RangeCalibration,
   TimeframeAlignment,
-  VolatilityModelForecast
+  VolatilityModelForecast,
+  RegimeReliability
 } from "../types/forecast.js";
 
 const MINIMUM_HISTORY = 31;
@@ -95,12 +97,14 @@ export function buildDailyEnsemble(
 
   const limit = asset === "BTC" ? 0.12 : asset === "ETH" ? 0.15 : 0.22;
   const returnMultiplier = assetProfile(asset).returnMultiplier;
+  const regimeReliability = calculateRegimeReliability(marketRegime.id, leaderboard);
   return {
-    expectedReturn: clamp(expectedReturn * returnMultiplier, -limit, limit),
+    expectedReturn: clamp(expectedReturn * returnMultiplier * regimeReliability.returnMultiplier, -limit, limit),
     leaderboard,
     marketRegime,
     modelDispersion: modelDispersion * returnMultiplier,
-    confidencePenalty: calculateEnsembleConfidencePenalty(marketRegime.id, modelDispersion * returnMultiplier)
+    confidencePenalty: calculateEnsembleConfidencePenalty(marketRegime.id, modelDispersion * returnMultiplier) + regimeReliability.confidencePenalty,
+    regimeReliability
   };
 }
 
@@ -412,6 +416,39 @@ export function buildVolatilityModel(candles: BitcoinCandle[]): VolatilityModelF
   };
 }
 
+export function calculateDirectionProbabilityCalibration(records: Array<{
+  horizon?: "daily" | "weekly";
+  baseClose: number;
+  actualClose?: number;
+  directionModel?: DirectionModelForecast;
+}>): DirectionProbabilityCalibration {
+  const settled = records.filter((record) =>
+    (record.horizon ?? "daily") === "daily" &&
+    record.actualClose !== undefined &&
+    record.directionModel !== undefined &&
+    record.directionModel.direction !== "Neutral"
+  );
+
+  if (settled.length < 12) {
+    return { settledCount: settled.length, averageProbability: null, realizedAccuracy: null, calibrationGap: null, status: "learning" };
+  }
+
+  const probabilities = settled.map((record) => Math.max(record.directionModel!.probabilityUp, record.directionModel!.probabilityDown));
+  const correct = settled.filter((record) =>
+    record.directionModel!.direction === directionFromReturn(record.actualClose! / record.baseClose - 1)
+  ).length / settled.length;
+  const averageProbability = average(probabilities);
+  const calibrationGap = Math.abs(averageProbability - correct);
+
+  return {
+    settledCount: settled.length,
+    averageProbability,
+    realizedAccuracy: correct,
+    calibrationGap,
+    status: calibrationGap <= 0.08 && correct >= 0.5 ? "calibrated" : "caution"
+  };
+}
+
 export function calculateEnsembleConfidencePenalty(marketRegime: MarketRegimeId, modelDispersion: number) {
   const regimePenalty = marketRegime === "volatile" ? 9 : marketRegime === "downtrend" ? 3 : marketRegime === "uptrend" ? 1 : 0;
   return clamp(regimePenalty + modelDispersion * 220, 0, 14);
@@ -468,7 +505,9 @@ export function buildForecastDecision({
   multiTimeframe,
   directionModel,
   returnDirection,
-  volatilityModel
+  volatilityModel,
+  regimeReliability,
+  directionCalibration
 }: {
   expectedReturn: number;
   confidence: number;
@@ -478,28 +517,53 @@ export function buildForecastDecision({
   directionModel?: DirectionModelForecast;
   returnDirection?: "Bullish" | "Bearish" | "Neutral";
   volatilityModel?: VolatilityModelForecast;
+  regimeReliability?: RegimeReliability;
+  directionCalibration?: DirectionProbabilityCalibration;
 }): ForecastDecision {
   const isAligned = multiTimeframe.alignment === "bullish" || multiTimeframe.alignment === "bearish";
   const resolvedDirectionModel = directionModel ?? buildDirectionModelFromReturn(expectedReturn);
   const resolvedReturnDirection = returnDirection ?? directionFromReturn(expectedReturn);
   const resolvedVolatilityModel = volatilityModel ?? { expectedDailyMovePercent: 0, shortTermVolatilityPercent: 0, mediumTermVolatilityPercent: 0, outlook: "normal" as const };
+  const resolvedRegimeReliability = regimeReliability ?? { marketRegime: "range" as const, evaluatedDays: 99, directionalAccuracy: 55, meanAbsolutePercentError: 0, returnMultiplier: 1, confidencePenalty: 0, isValidated: true };
+  const resolvedDirectionCalibration = directionCalibration ?? { settledCount: 0, averageProbability: null, realizedAccuracy: null, calibrationGap: null, status: "learning" as const };
   const directionAgreement = resolvedDirectionModel.direction === resolvedReturnDirection && resolvedDirectionModel.direction !== "Neutral";
   const directionProbability = Math.max(resolvedDirectionModel.probabilityUp, resolvedDirectionModel.probabilityDown);
   const volatilityPenalty = resolvedVolatilityModel.outlook === "elevated" ? 7 : 0;
+  const calibrationPenalty = resolvedDirectionCalibration.status === "caution" ? 12 : resolvedDirectionCalibration.status === "learning" ? 3 : 0;
   const score = Math.round(clamp(
     confidence + (hasForecastEdge ? 9 : -24) + multiTimeframe.confidenceAdjustment + (dataQualityScore - 80) * 0.2 +
-      (directionAgreement ? 6 : -12) + (directionProbability - 0.5) * 28 - volatilityPenalty,
+      (directionAgreement ? 6 : -12) + (directionProbability - 0.5) * 28 - volatilityPenalty - calibrationPenalty,
     0,
     100
   ));
 
-  if (hasForecastEdge && isAligned && directionAgreement && directionProbability >= 0.56 && Math.abs(expectedReturn) >= 0.0045 && score >= 68) {
+  if (hasForecastEdge && isAligned && resolvedRegimeReliability.isValidated && resolvedDirectionCalibration.status !== "caution" && directionAgreement && directionProbability >= 0.56 && Math.abs(expectedReturn) >= 0.0045 && score >= 68) {
     return { status: "trade", score, detail: "Direction, return, and timeframe models agree with a validated edge." };
   }
-  if (!hasForecastEdge || !directionAgreement || directionProbability < 0.52 || Math.abs(expectedReturn) < 0.0025 || score < 45) {
+  if (!hasForecastEdge || !resolvedRegimeReliability.isValidated || resolvedDirectionCalibration.status === "caution" || !directionAgreement || directionProbability < 0.52 || Math.abs(expectedReturn) < 0.0025 || score < 45) {
     return { status: "noEdge", score, detail: "No validated edge. The dashboard remains in observation mode." };
   }
   return { status: "watch", score, detail: "A signal is forming, but confidence or timeframe alignment is incomplete." };
+}
+
+function calculateRegimeReliability(marketRegime: MarketRegimeId, leaderboard: ForecastModelPerformance[]): RegimeReliability {
+  const weighted = <T extends keyof ForecastModelPerformance>(key: T) => leaderboard.reduce((sum, model) => sum + Number(model[key]) * model.weight, 0);
+  const evaluatedDays = Math.round(weighted("evaluatedDays"));
+  const directionalAccuracy = weighted("directionalAccuracy");
+  const meanAbsolutePercentError = weighted("meanAbsolutePercentError");
+  const isValidated = evaluatedDays >= 24;
+  const returnMultiplier = !isValidated
+    ? 0.72
+    : directionalAccuracy < 47
+      ? 0.55
+      : directionalAccuracy < 51
+        ? 0.78
+        : directionalAccuracy >= 57
+          ? 1.06
+          : 0.94;
+  const confidencePenalty = !isValidated ? 8 : directionalAccuracy < 47 ? 14 : directionalAccuracy < 51 ? 6 : 0;
+
+  return { marketRegime, evaluatedDays, directionalAccuracy, meanAbsolutePercentError, returnMultiplier, confidencePenalty, isValidated };
 }
 
 function buildDirectionModelFromReturn(expectedReturn: number): DirectionModelForecast {

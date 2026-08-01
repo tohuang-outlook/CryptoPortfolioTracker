@@ -15,6 +15,7 @@ import {
   buildMultiTimeframeSignal,
   buildVolatilityModel,
   calculateDerivativeAdjustment,
+  calculateDirectionProbabilityCalibration,
   calculateProbabilisticRange,
   calculateRangeCalibration,
   calculateEma,
@@ -136,6 +137,7 @@ function buildForecast(
   const benchmark = evaluateForecastBenchmark(candles, assetSymbol, excludedFeatures);
   const latestCandle = candles[candles.length - 1];
   const rangeCalibration = calculateRangeCalibration(records, "daily");
+  const directionCalibration = calculateDirectionProbabilityCalibration(records);
   const correction = calculateBiasCorrection(records, "daily");
   const rawExpectedReturn = clamp(
     ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trendPercent) + calculateOnChainAdjustment(onChain) + calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles) + multiTimeframe.adjustment + calculateMicrostructureAdjustment(microstructure, microstructureSnapshots) + correction,
@@ -185,7 +187,9 @@ function buildForecast(
     multiTimeframe,
     directionModel,
     returnDirection: direction,
-    volatilityModel
+    volatilityModel,
+    regimeReliability: ensemble.regimeReliability,
+    directionCalibration
   });
   const weeklyForecast = buildWeeklyForecast({
     latestCandle,
@@ -198,6 +202,14 @@ function buildForecast(
   });
 
   const signals: ForecastSignal[] = [
+    {
+      label: "Regime reliability",
+      value: `${ensemble.regimeReliability.directionalAccuracy.toFixed(0)}% / ${ensemble.regimeReliability.evaluatedDays}D`,
+      direction: ensemble.regimeReliability.isValidated && ensemble.regimeReliability.directionalAccuracy >= 51 ? "positive" : "negative",
+      detail: ensemble.regimeReliability.isValidated
+        ? `${ensemble.marketRegime.label} model reliability adjusts return size and decision confidence.`
+        : `Collecting ${ensemble.marketRegime.label.toLowerCase()} samples before this regime can approve a forecast.`
+    },
     {
       label: "Direction probability",
       value: `Up ${(directionModel.probabilityUp * 100).toFixed(0)}% / Down ${(directionModel.probabilityDown * 100).toFixed(0)}%`,
@@ -315,6 +327,8 @@ function buildForecast(
     multiTimeframe,
     directionModel,
     volatilityModel,
+    regimeReliability: ensemble.regimeReliability,
+    directionCalibration,
     decision,
     weeklyForecast,
     signals,
@@ -370,6 +384,8 @@ function upsertForecastRecords(
     microstructureData: forecast.microstructure ?? undefined,
     hasForecastEdge: forecast.benchmark.hasEdge,
     multiTimeframe: forecast.multiTimeframe,
+    directionModel: forecast.directionModel,
+    regimeReliability: forecast.regimeReliability,
     decision: forecast.decision
   };
   const weeklyRecord: ForecastRecord = {
