@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPortfolioSnapshot } from "./portfolio";
+import { buildPortfolioSnapshot, validateTransactionLedger } from "./portfolio";
 
 describe("buildPortfolioSnapshot", () => {
   it("returns a zeroed snapshot when there are no transactions", () => {
@@ -18,6 +18,8 @@ describe("buildPortfolioSnapshot", () => {
         totalInvested: 0,
         portfolioValue: 0,
         totalUnrealizedPnL: 0,
+        totalRealizedPnL: 0,
+        totalPnL: 0,
         totalReturnPercent: 0
       }
     });
@@ -60,6 +62,8 @@ describe("buildPortfolioSnapshot", () => {
       totalInvested: 14000,
       portfolioValue: 15000,
       totalUnrealizedPnL: 1000,
+      totalRealizedPnL: 0,
+      totalPnL: 1000,
       totalReturnPercent: 1000 / 14000
     });
 
@@ -129,7 +133,95 @@ describe("buildPortfolioSnapshot", () => {
       totalInvested: 10000,
       portfolioValue: 0,
       totalUnrealizedPnL: -10000,
+      totalRealizedPnL: 0,
+      totalPnL: -10000,
       totalReturnPercent: -1
+    });
+  });
+
+  it("reduces the open cost basis and quantity after a partial sale", () => {
+    const snapshot = buildPortfolioSnapshot(
+      [
+        {
+          id: "btc-buy",
+          assetSymbol: "BTC",
+          assetName: "Bitcoin",
+          type: "buy",
+          amountInvested: 10000,
+          purchasePrice: 50000,
+          quantity: 0.2,
+          purchaseDate: "2026-06-01",
+          notes: "",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z"
+        },
+        {
+          id: "btc-sell",
+          assetSymbol: "BTC",
+          assetName: "Bitcoin",
+          type: "sell",
+          amountInvested: 3000,
+          purchasePrice: 60000,
+          quantity: 0.05,
+          purchaseDate: "2026-06-02",
+          notes: "Partial sale",
+          createdAt: "2026-06-02T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:00:00.000Z"
+        }
+      ],
+      { BTC: 60000, ETH: 0, SOL: 0, XRP: 0, ADA: 0, DOGE: 0 }
+    );
+
+    expect(snapshot.assets[0]).toMatchObject({
+      totalInvested: 7500,
+      totalQuantity: 0.15,
+      averageBuyPrice: 50000,
+      currentValue: 9000,
+      unrealizedPnL: 1500
+    });
+    expect(snapshot.portfolio).toEqual({
+      totalInvested: 7500,
+      portfolioValue: 9000,
+      totalUnrealizedPnL: 1500,
+      totalRealizedPnL: 500,
+      totalPnL: 2000,
+      totalReturnPercent: 0.2
+    });
+  });
+
+  it("rejects a sale that exceeds the quantity held at that time", () => {
+    const result = validateTransactionLedger([
+      {
+        id: "btc-buy",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "buy",
+        amountInvested: 1000,
+        purchasePrice: 50000,
+        quantity: 0.02,
+        purchaseDate: "2026-06-01",
+        notes: "",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z"
+      },
+      {
+        id: "btc-sell",
+        assetSymbol: "BTC",
+        assetName: "Bitcoin",
+        type: "sell",
+        amountInvested: 1500,
+        purchasePrice: 50000,
+        quantity: 0.03,
+        purchaseDate: "2026-06-02",
+        notes: "",
+        createdAt: "2026-06-02T00:00:00.000Z",
+        updatedAt: "2026-06-02T00:00:00.000Z"
+      }
+    ]);
+
+    expect(result).toEqual({
+      success: false,
+      error: "Cannot sell more BTC than the quantity currently held."
     });
   });
 
@@ -153,24 +245,13 @@ describe("buildPortfolioSnapshot", () => {
       { BTC: 60000, ETH: 0, SOL: 0, XRP: 0, ADA: 0, DOGE: 0 }
     );
 
-    expect(snapshot.assets).toEqual([
-      {
-        assetSymbol: "BTC",
-        assetName: "Bitcoin",
-        totalInvested: 0,
-        totalQuantity: 0,
-        averageBuyPrice: 0,
-        currentPrice: 60000,
-        currentValue: 0,
-        unrealizedPnL: 0,
-        unrealizedPnLPercent: 0,
-        allocationPercent: 0
-      }
-    ]);
+    expect(snapshot.assets).toEqual([]);
     expect(snapshot.portfolio).toEqual({
       totalInvested: 0,
       portfolioValue: 0,
       totalUnrealizedPnL: 0,
+      totalRealizedPnL: 0,
+      totalPnL: 0,
       totalReturnPercent: 0
     });
   });

@@ -83,6 +83,27 @@ test("adds a BTC transaction and updates dashboard totals", async () => {
   expect(within(holdings).getByText("0.02000000")).toBeInTheDocument();
 });
 
+test("records a sale and reduces the open holding", async () => {
+  const user = userEvent.setup();
+
+  render(<App />);
+
+  await user.type(screen.getByLabelText(/amount invested/i), "1000");
+  await user.type(screen.getByLabelText(/purchase price/i), "50000");
+  await user.type(screen.getByLabelText(/purchase date/i), "2026-06-01");
+  await user.click(screen.getByRole("button", { name: /save transaction/i }));
+
+  await user.selectOptions(screen.getByLabelText(/transaction type/i), "sell");
+  await user.type(screen.getByLabelText(/amount received/i), "600");
+  await user.type(screen.getByLabelText(/sale price/i), "60000");
+  await user.type(screen.getByLabelText(/sale date/i), "2026-06-02");
+  await user.click(screen.getByRole("button", { name: /save transaction/i }));
+
+  const holdings = screen.getByRole("region", { name: /^holdings$/i });
+  expect(within(holdings).getByText("0.01000000")).toBeInTheDocument();
+  expect(screen.getByText(/sell · jun 2, 2026/i)).toBeInTheDocument();
+});
+
 test("creates a new profile and switches to its empty portfolio", async () => {
   const user = userEvent.setup();
 

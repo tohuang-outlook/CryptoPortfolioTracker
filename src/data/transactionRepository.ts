@@ -107,7 +107,7 @@ function isTransaction(value: unknown): value is Transaction {
     typeof value.id === "string" &&
     isSupportedAssetSymbol(value.assetSymbol) &&
     typeof value.assetName === "string" &&
-    value.type === "buy" &&
+    (value.type === "buy" || value.type === "sell") &&
     isPositiveNumber(value.amountInvested) &&
     isPositiveNumber(value.purchasePrice) &&
     isPositiveNumber(value.quantity) &&

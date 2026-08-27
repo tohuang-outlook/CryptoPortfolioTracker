@@ -12,6 +12,7 @@ type TransactionFormResult =
   | { success: false; error: string };
 
 const INITIAL_FORM: TransactionFormInput = {
+  transactionType: "buy",
   assetSymbol: "BTC",
   amountInvested: "",
   purchasePrice: "",
@@ -30,6 +31,7 @@ export function TransactionForm({
   const [error, setError] = useState("");
   const [lastEditedField, setLastEditedField] =
     useState<PurchaseField>("purchasePrice");
+  const isSale = form.transactionType === "sell";
 
   const amountInvested = Number(form.amountInvested);
   const purchasePrice = Number(form.purchasePrice);
@@ -118,6 +120,22 @@ export function TransactionForm({
         }}
       >
         <label>
+          {t("Transaction type")}
+          <select
+            value={form.transactionType}
+            onChange={(event) =>
+              setForm((currentForm) => ({
+                ...currentForm,
+                transactionType: event.target.value === "sell" ? "sell" : "buy"
+              }))
+            }
+          >
+            <option value="buy">{t("Buy")}</option>
+            <option value="sell">{t("Sell")}</option>
+          </select>
+        </label>
+
+        <label>
           {t("Asset")}
           <select
             value={form.assetSymbol}
@@ -137,7 +155,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          {t("Amount Invested")}
+          {t(isSale ? "Amount received" : "Amount Invested")}
           <input
             type="number"
             inputMode="decimal"
@@ -150,7 +168,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          {t("Purchase Price")}
+          {t(isSale ? "Sale Price" : "Purchase Price")}
           <input
             type="number"
             inputMode="decimal"
@@ -164,7 +182,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          {t("Purchase Shares")}
+          {t(isSale ? "Sale Shares" : "Purchase Shares")}
           <input
             type="number"
             inputMode="decimal"
@@ -178,7 +196,7 @@ export function TransactionForm({
         </label>
 
         <label>
-          {t("Purchase Date")}
+          {t(isSale ? "Sale Date" : "Purchase Date")}
           <input
             type="date"
             required

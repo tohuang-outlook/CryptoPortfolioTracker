@@ -9,7 +9,7 @@ export function SummaryCards({
   const { t } = useTranslation();
   const cards = [
     {
-      label: t("Total invested"),
+      label: t("Open cost basis"),
       value: formatCurrency(portfolio.totalInvested),
       tone: "neutral"
     },
@@ -24,9 +24,14 @@ export function SummaryCards({
       tone: portfolio.totalUnrealizedPnL >= 0 ? "positive" : "negative"
     },
     {
+      label: t("Realized P&L"),
+      value: formatSignedCurrency(portfolio.totalRealizedPnL),
+      tone: portfolio.totalRealizedPnL >= 0 ? "positive" : "negative"
+    },
+    {
       label: t("Total return"),
-      value: formatPercent(portfolio.totalReturnPercent),
-      tone: portfolio.totalReturnPercent >= 0 ? "positive" : "negative"
+      value: `${formatSignedCurrency(portfolio.totalPnL)} (${formatPercent(portfolio.totalReturnPercent)})`,
+      tone: portfolio.totalPnL >= 0 ? "positive" : "negative"
     }
   ] as const;
 

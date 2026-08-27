@@ -48,6 +48,23 @@ describe("validateTransactionInput", () => {
     }
   });
 
+  it("preserves a sell transaction type", () => {
+    const result = validateTransactionInput({
+      transactionType: "sell",
+      assetSymbol: "ETH",
+      amountInvested: "3000",
+      purchasePrice: "3000",
+      purchaseShares: "1",
+      purchaseDate: "2026-06-03",
+      notes: "Partial sale"
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: { transactionType: "sell", quantity: 1 }
+    });
+  });
+
   it("rejects input when both purchase price and purchase shares are invalid", () => {
     const result = validateTransactionInput({
       assetSymbol: "ETH",

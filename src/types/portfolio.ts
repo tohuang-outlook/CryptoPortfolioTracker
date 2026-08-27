@@ -6,7 +6,7 @@ export type SupportedAssetSymbol =
   | "ADA"
   | "DOGE";
 
-export type TransactionType = "buy";
+export type TransactionType = "buy" | "sell";
 
 export interface Transaction {
   id: string;
@@ -32,6 +32,7 @@ export interface Profile {
 export type TransactionsByProfileId = Record<string, Transaction[]>;
 
 export interface TransactionFormInput {
+  transactionType?: TransactionType;
   assetSymbol: string;
   amountInvested: string;
   purchasePrice: string;
@@ -61,6 +62,8 @@ export interface PortfolioSummary {
   totalInvested: number;
   portfolioValue: number;
   totalUnrealizedPnL: number;
+  totalRealizedPnL: number;
+  totalPnL: number;
   totalReturnPercent: number;
 }
 

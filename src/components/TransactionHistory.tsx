@@ -23,15 +23,7 @@ export function TransactionHistory({
   onDeleteTransaction
 }: {
   transactions: Transaction[];
-  onUpdateTransaction?: (input: {
-    id: string;
-    assetSymbol: string;
-    amountInvested: string;
-    purchasePrice: string;
-    purchaseShares: string;
-    purchaseDate: string;
-    notes: string;
-  }) => TransactionMutationResult;
+  onUpdateTransaction?: (input: TransactionFormInput & { id: string }) => TransactionMutationResult;
   onDeleteTransaction?: (id: string) => TransactionMutationResult;
 }) {
   const { t } = useTranslation();
@@ -146,6 +138,7 @@ function EditableTransactionRow({
   t: (key: string, variables?: Record<string, string | number>) => string;
 }) {
   const [form, setForm] = useState<TransactionFormInput>({
+    transactionType: transaction.type,
     assetSymbol: transaction.assetSymbol,
     amountInvested: String(transaction.amountInvested),
     purchasePrice: String(transaction.purchasePrice),
@@ -155,6 +148,7 @@ function EditableTransactionRow({
   });
   const [lastEditedField, setLastEditedField] =
     useState<PurchaseField>("purchasePrice");
+  const isSale = form.transactionType === "sell";
 
   const amountInvested = Number(form.amountInvested);
   const purchasePrice = Number(form.purchasePrice);
@@ -238,6 +232,22 @@ function EditableTransactionRow({
       >
         <div className="history-edit-grid">
           <label>
+            {t("Transaction type")}
+            <select
+              value={form.transactionType}
+              onChange={(event) =>
+                setForm((currentForm) => ({
+                  ...currentForm,
+                  transactionType: event.target.value === "sell" ? "sell" : "buy"
+                }))
+              }
+            >
+              <option value="buy">{t("Buy")}</option>
+              <option value="sell">{t("Sell")}</option>
+            </select>
+          </label>
+
+          <label>
             {t("Asset")}
             <select
               value={form.assetSymbol}
@@ -257,7 +267,7 @@ function EditableTransactionRow({
           </label>
 
           <label>
-            {t("Amount Invested")}
+            {t(isSale ? "Amount received" : "Amount Invested")}
             <input
               type="number"
               inputMode="decimal"
@@ -270,7 +280,7 @@ function EditableTransactionRow({
         </label>
 
           <label>
-            {t("Purchase Price")}
+            {t(isSale ? "Sale Price" : "Purchase Price")}
             <input
             type="number"
             inputMode="decimal"
@@ -284,7 +294,7 @@ function EditableTransactionRow({
         </label>
 
         <label>
-          {t("Purchase Shares")}
+          {t(isSale ? "Sale Shares" : "Purchase Shares")}
           <input
             type="number"
             inputMode="decimal"
@@ -298,7 +308,7 @@ function EditableTransactionRow({
         </label>
 
           <label>
-            {t("Purchase Date")}
+            {t(isSale ? "Sale Date" : "Purchase Date")}
             <input
               type="date"
               required
@@ -382,7 +392,7 @@ function ReadOnlyTransactionRow({
           {transaction.assetName} ({transaction.assetSymbol})
         </p>
         <p className="history-item__meta">
-          {t("Buy")} · {formatDate(transaction.purchaseDate)} ·{" "}
+          {t(transaction.type === "sell" ? "Sell" : "Buy")} · {formatDate(transaction.purchaseDate)} ·{" "}
           {transaction.quantity.toFixed(8)} {transaction.assetSymbol}
         </p>
         {transaction.notes ? (
@@ -417,7 +427,7 @@ function ReadOnlyTransactionRow({
       <div className="history-item__side">
         <div className="history-item__amounts">
           <p>{formatCurrency(transaction.amountInvested)}</p>
-          <p>{formatCurrency(transaction.purchasePrice)} {t("entry")}</p>
+          <p>{formatCurrency(transaction.purchasePrice)} {t(transaction.type === "sell" ? "exit" : "entry")}</p>
         </div>
         <div className="history-item__actions">
           <button

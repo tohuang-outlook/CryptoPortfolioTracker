@@ -2,6 +2,7 @@ import { SUPPORTED_ASSETS } from "../constants/assets";
 import type { TransactionFormInput } from "../types/portfolio";
 
 export function validateTransactionInput(input: TransactionFormInput) {
+  const transactionType = input.transactionType ?? "buy";
   const amountInvested = Number(input.amountInvested);
   const purchasePrice = Number(input.purchasePrice);
   const purchaseShares = Number(input.purchaseShares);
@@ -40,6 +41,7 @@ export function validateTransactionInput(input: TransactionFormInput) {
   return {
     success: true as const,
     data: {
+      transactionType,
       assetSymbol: input.assetSymbol,
       amountInvested,
       purchasePrice: normalizedPurchasePrice,

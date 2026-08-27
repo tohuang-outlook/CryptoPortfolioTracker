@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SUPPORTED_ASSETS } from "../constants/assets";
-import { buildPortfolioSnapshot } from "../domain/portfolio";
+import { buildPortfolioSnapshot, validateTransactionLedger } from "../domain/portfolio";
 import { validateTransactionInput } from "../domain/validation";
 import type {
   PriceMap,
@@ -58,7 +58,7 @@ export function usePortfolio(
       id: createTransactionId(),
       assetSymbol: asset.symbol,
       assetName: asset.name,
-      type: "buy",
+      type: result.data.transactionType,
       amountInvested: result.data.amountInvested,
       purchasePrice: result.data.purchasePrice,
       quantity: result.data.quantity,
@@ -69,6 +69,9 @@ export function usePortfolio(
     };
 
     const updatedTransactions = [nextTransaction, ...transactionsRef.current];
+    const ledgerResult = validateTransactionLedger(updatedTransactions);
+    if (!ledgerResult.success) return ledgerResult;
+
     const saveResult = saveTransactions(updatedTransactions);
     if (!saveResult.success) {
       return saveResult;
@@ -116,6 +119,7 @@ export function usePortfolio(
             ...transaction,
             assetSymbol: asset.symbol,
             assetName: asset.name,
+            type: result.data.transactionType,
             amountInvested: result.data.amountInvested,
             purchasePrice: result.data.purchasePrice,
             quantity: result.data.quantity,
@@ -125,6 +129,9 @@ export function usePortfolio(
           }
         : transaction
     );
+    const ledgerResult = validateTransactionLedger(updatedTransactions);
+    if (!ledgerResult.success) return ledgerResult;
+
     const saveResult = saveTransactions(updatedTransactions);
     if (!saveResult.success) {
       return saveResult;
@@ -146,6 +153,8 @@ export function usePortfolio(
         error: "Unable to find that transaction."
       };
     }
+    const ledgerResult = validateTransactionLedger(updatedTransactions);
+    if (!ledgerResult.success) return ledgerResult;
     const saveResult = saveTransactions(updatedTransactions);
     if (!saveResult.success) {
       return saveResult;
