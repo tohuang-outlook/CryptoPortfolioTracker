@@ -11,19 +11,22 @@ import {
   calculateDirectionProbabilityCalibration,
   calculateProbabilisticRange,
   calculateRangeCalibration,
-  calculateEma,
   calculateRsi,
   calculateVolatility,
   clamp,
+  buildWeeklySignalReturn,
   evaluateFeatureAblation,
   evaluateForecastBenchmark,
-  getAutoExcludedFeatures
+  evaluateWeeklyForecastBenchmark,
+  getAutoExcludedFeatures,
+  shrinkReturnToBenchmark
 } from "../src/data/forecastModels.js";
 import { fetchRecentHourlyCandles, getDailyCandleHistory, parseCandleHistoryCache, type CandleHistoryCache } from "../src/data/candleHistoryService.js";
 import { detectForecastAlerts, type ForecastAlert } from "../src/data/forecastAlerts.js";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "../src/data/derivativesService.js";
 import { calculateOnChainAdjustment, fetchOnChainMetrics } from "../src/data/onChainService.js";
 import { appendMicrostructureSnapshot, calculateMicrostructureAdjustment, fetchMicrostructureSnapshot } from "../src/data/microstructureService.js";
+import { FORECAST_EVALUATION_VERSION, isComparableForecastRecord, isUtcForecastCreationWindow } from "../src/data/forecastSchedule.js";
 import type { DerivativeMarketData, DirectionModelForecast, ForecastAsset, ForecastDecision, MicrostructureSnapshot, MultiTimeframeSignal, RegimeReliability } from "../src/types/forecast.js";
 
 const FORECAST_FILE_NAME = "bitcoin-forecast-records.json";
@@ -47,6 +50,7 @@ interface RecordItem {
   horizon?: "daily" | "weekly";
   targetDate: string;
   createdAt: string;
+  evaluationVersion?: number;
   baseClose: number;
   predictedClose: number;
   lowerBound: number;
@@ -68,6 +72,7 @@ interface RecordItem {
 }
 
 export async function runForecastUpdate(userDataPath: string): Promise<ForecastAlert[]> {
+  const runStartedAt = Date.now();
   const filePath = path.join(userDataPath, FORECAST_FILE_NAME);
   const microstructureFilePath = path.join(userDataPath, MICROSTRUCTURE_FILE_NAME);
   const candleHistoryFilePath = path.join(userDataPath, CANDLE_HISTORY_FILE_NAME);
@@ -105,11 +110,14 @@ export async function runForecastUpdate(userDataPath: string): Promise<ForecastA
       calculateMarketLinkAdjustment(assetSymbol, btcCandles, ethCandles),
       assetSymbol,
       microstructure,
-      microstructureSnapshots.filter((snapshot) => snapshot.assetSymbol === assetSymbol)
+      microstructureSnapshots.filter((snapshot) => snapshot.assetSymbol === assetSymbol),
+      runStartedAt
     );
-    const currentDaily = updatedAssetRecords.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1)!;
+    const currentDaily = updatedAssetRecords.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1);
     const previousDaily = records.filter((record) => getHorizon(record) === "daily").sort(byTargetDate).at(-1);
-    alerts.push(...detectForecastAlerts(previousDaily, currentDaily, newlySettled, assetSymbol));
+    if (currentDaily) {
+      alerts.push(...detectForecastAlerts(previousDaily, currentDaily, newlySettled, assetSymbol));
+    }
     nextRecords = [...nextRecords.filter((record) => !belongsToAsset(record, assetSymbol)), ...updatedAssetRecords];
   }
 
@@ -127,42 +135,46 @@ function reconcileRecords(records: RecordItem[], candles: Candle[]) {
   }));
 }
 
-function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles: Candle[], derivatives: DerivativeMarketData | null, onChain: RecordItem["onChainData"] | null, marketAdjustment: number, assetSymbol: ForecastAsset, microstructure: MicrostructureSnapshot | null, microstructureSnapshots: MicrostructureSnapshot[]) {
+function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles: Candle[], derivatives: DerivativeMarketData | null, onChain: RecordItem["onChainData"] | null, marketAdjustment: number, assetSymbol: ForecastAsset, microstructure: MicrostructureSnapshot | null, microstructureSnapshots: MicrostructureSnapshot[], now: number) {
+  const comparableRecords = records.filter(isComparableForecastRecord);
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
   const latest = candles[candles.length - 1];
   const currentClose = latest.close;
   const trend = average(closes.slice(-7)) / average(closes.slice(-30)) - 1;
   const rsi = calculateRsi(closes.slice(-15));
-  const macd = (calculateEma(closes, 12) - calculateEma(closes, 26)) / currentClose;
   const volatility = calculateVolatility(closes.slice(-15));
   const dailyReturn = currentClose / closes[closes.length - 2] - 1;
   const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
-  const volumeConfirmation = calculateVolumeConfirmation(dailyReturn, volumeRatio);
   const featureAblation = evaluateFeatureAblation(candles, assetSymbol);
   const excludedFeatures = getAutoExcludedFeatures(featureAblation);
   const ensemble = buildDailyEnsemble(candles, assetSymbol, excludedFeatures);
   const multiTimeframe = buildMultiTimeframeSignal(hourlyCandles, candles);
   const benchmark = evaluateForecastBenchmark(candles, assetSymbol, excludedFeatures);
-  const dailyCalibration = calculateRangeCalibration(records, "daily");
-  const weeklyCalibration = calculateRangeCalibration(records, "weekly");
-  const directionCalibration = calculateDirectionProbabilityCalibration(records);
+  const weeklyBenchmark = evaluateWeeklyForecastBenchmark(candles);
+  const dailyCalibration = calculateRangeCalibration(comparableRecords, "daily", ensemble.marketRegime.id);
+  const weeklyCalibration = calculateRangeCalibration(comparableRecords, "weekly", ensemble.marketRegime.id);
+  const directionCalibration = calculateDirectionProbabilityCalibration(comparableRecords);
 
   const rawDailyExpectedReturn = clamp(
-    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trend) + calculateOnChainAdjustment(onChain ?? null) + marketAdjustment + multiTimeframe.adjustment + calculateMicrostructureAdjustment(microstructure, microstructureSnapshots) + calculateBias(records, "daily"),
+    ensemble.expectedReturn + calculateDerivativeAdjustment(derivatives, trend) + calculateOnChainAdjustment(onChain ?? null) + marketAdjustment + multiTimeframe.adjustment + calculateMicrostructureAdjustment(microstructure, microstructureSnapshots) + calculateBias(comparableRecords, "daily"),
     -0.12,
     0.12
   );
   const directionModel = buildDirectionModel(candles, rawDailyExpectedReturn);
   const volatilityModel = buildVolatilityModel(candles);
   const rawDirection = getDirection(rawDailyExpectedReturn, 0.003);
-  const dailyExpectedReturn = directionModel.direction === rawDirection && rawDirection !== "Neutral"
-    ? rawDailyExpectedReturn
-    : rawDailyExpectedReturn * 0.45;
-  const weeklyExpectedReturn = clamp(
-    trend * 1.8 + macd * 1.35 - ((rsi - 50) / 100) * 0.035 + volumeConfirmation * 1.4 + calculateBias(records, "weekly"),
-    -0.3,
-    0.3
+  const dailyExpectedReturn = shrinkReturnToBenchmark(
+    directionModel.direction === rawDirection && rawDirection !== "Neutral"
+      ? rawDailyExpectedReturn
+      : rawDailyExpectedReturn * 0.45,
+    benchmark.hasEdge,
+    "daily"
+  );
+  const weeklyExpectedReturn = shrinkReturnToBenchmark(
+    clamp(buildWeeklySignalReturn(candles) + calculateBias(comparableRecords, "weekly"), -0.3, 0.3),
+    weeklyBenchmark.hasEdge,
+    "weekly"
   );
 
   const dailyConfidence = Math.round(clamp(
@@ -228,6 +240,10 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
     expectedReturnPercent: weeklyExpectedReturn * 100
   });
 
+  if (!isUtcForecastCreationWindow(now)) {
+    return records;
+  }
+
   return upsertRecord(upsertRecord(records, dailyPrediction), weeklyPrediction).slice(-180);
 }
 
@@ -253,14 +269,13 @@ function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedRetur
   decision?: ForecastDecision;
 }): RecordItem {
   const predictedClose = baseClose * (1 + expectedReturn);
-  return { assetSymbol, horizon, targetDate, createdAt: new Date().toISOString(), baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, microstructureData, hasForecastEdge, multiTimeframe, directionModel, regimeReliability, decision };
+  return { assetSymbol, horizon, targetDate, createdAt: new Date().toISOString(), evaluationVersion: FORECAST_EVALUATION_VERSION, baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, microstructureData, hasForecastEdge, multiTimeframe, directionModel, regimeReliability, decision };
 }
 
 function upsertRecord(records: RecordItem[], record: RecordItem) {
   const index = records.findIndex((item) => item.targetDate === record.targetDate && getHorizon(item) === record.horizon && item.assetSymbol === record.assetSymbol);
   const next = [...records];
   if (index === -1) next.push(record);
-  else if (next[index].actualClose === undefined) next[index] = record;
   return next;
 }
 
@@ -276,7 +291,6 @@ function recordsForAsset(records: RecordItem[], assetSymbol: ForecastAsset) { re
 function byTargetDate(left: RecordItem, right: RecordItem) { return left.targetDate.localeCompare(right.targetDate); }
 function getDirection(expectedReturn: number, threshold: number): "Bullish" | "Bearish" | "Neutral" { return expectedReturn > threshold ? "Bullish" : expectedReturn < -threshold ? "Bearish" : "Neutral"; }
 function toDate(timestamp: number) { return new Date(timestamp).toISOString().slice(0, 10); }
-function calculateVolumeConfirmation(dailyReturn: number, ratio: number) { return Math.abs(dailyReturn) < 0.002 || ratio <= 1 ? 0 : Math.sign(dailyReturn) * clamp((ratio - 1) * 0.012, 0, 0.024); }
 function volumeConfidence(dailyReturn: number, ratio: number) { if (Math.abs(dailyReturn) < 0.002) return 0; if (ratio >= 1.15) return clamp((ratio - 1) * 8, 0, 6); return ratio <= 0.8 ? -4 : 0; }
 function calculateMarketLinkAdjustment(asset: ForecastAsset, btcCandles: Candle[], ethCandles: Candle[]) { if (asset === "BTC" || btcCandles.length < 2 || ethCandles.length < 2) return 0; const btcReturn = btcCandles[btcCandles.length - 1].close / btcCandles[btcCandles.length - 2].close - 1; const ethReturn = ethCandles[ethCandles.length - 1].close / ethCandles[ethCandles.length - 2].close - 1; return clamp(asset === "ETH" ? btcReturn * .15 : btcReturn * .32 + (ethReturn - btcReturn) * .18, -.012, .012); }
 function calculateBackgroundDataQuality(derivatives: DerivativeMarketData | null, onChain: RecordItem["onChainData"] | null, hasIntradayData: boolean, hasMicrostructure: boolean) { return Math.max(50, 100 - [!derivatives, !onChain, !hasIntradayData, !hasMicrostructure].filter(Boolean).length * 12); }

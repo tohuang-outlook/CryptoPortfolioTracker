@@ -15,6 +15,7 @@ export interface ForecastRecord {
   horizon?: "daily" | "weekly";
   targetDate: string;
   createdAt: string;
+  evaluationVersion?: number;
   baseClose: number;
   predictedClose: number;
   lowerBound: number;

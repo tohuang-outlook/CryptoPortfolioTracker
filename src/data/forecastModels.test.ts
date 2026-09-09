@@ -12,7 +12,9 @@ import {
   detectMarketRegime,
   evaluateFeatureAblation,
   evaluateForecastBenchmark,
-  getAutoExcludedFeatures
+  evaluateWeeklyForecastBenchmark,
+  getAutoExcludedFeatures,
+  shrinkReturnToBenchmark
 } from "./forecastModels";
 import type { BitcoinCandle } from "../types/forecast";
 
@@ -196,12 +198,40 @@ describe("daily forecast ensemble", () => {
     expect(calibration.multiplier).toBeGreaterThan(1);
   });
 
+  it("prefers a sufficiently sized market-regime sample when calibrating ranges", () => {
+    const calibration = calculateRangeCalibration(
+      [
+        ...Array.from({ length: 8 }, () => ({ horizon: "daily" as const, marketRegime: "volatile" as const, lowerBound: 99, upperBound: 101, actualClose: 100 })),
+        ...Array.from({ length: 12 }, () => ({ horizon: "daily" as const, marketRegime: "uptrend" as const, lowerBound: 99, upperBound: 101, actualClose: 104 }))
+      ],
+      "daily",
+      "volatile"
+    );
+
+    expect(calibration.settledCount).toBe(8);
+    expect(calibration.observedCoverage).toBe(1);
+    expect(calibration.multiplier).toBeLessThan(1);
+  });
+
   it("compares the ensemble against naive and trend baselines without future candles", () => {
     const benchmark = evaluateForecastBenchmark(makeCandles(90));
 
     expect(benchmark.ensemble.evaluatedDays).toBeGreaterThan(0);
     expect(benchmark.naive.evaluatedDays).toBe(benchmark.ensemble.evaluatedDays);
     expect(benchmark.trend.evaluatedDays).toBe(benchmark.ensemble.evaluatedDays);
+  });
+
+  it("evaluates the seven-day signal against a time-ordered baseline", () => {
+    const benchmark = evaluateWeeklyForecastBenchmark(makeCandles(100));
+
+    expect(benchmark.ensemble.evaluatedDays).toBeGreaterThan(0);
+    expect(benchmark.naive.evaluatedDays).toBe(benchmark.ensemble.evaluatedDays);
+  });
+
+  it("shrinks unproven returns toward the carry-forward baseline", () => {
+    expect(shrinkReturnToBenchmark(0.04, false, "daily")).toBeCloseTo(0.014, 8);
+    expect(shrinkReturnToBenchmark(0.04, false, "weekly")).toBeCloseTo(0.006, 8);
+    expect(shrinkReturnToBenchmark(0.04, true, "daily")).toBeCloseTo(0.04, 8);
   });
 
   it("keeps derivative adjustments bounded", () => {

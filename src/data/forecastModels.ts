@@ -4,6 +4,7 @@ import type {
   ForecastBenchmark,
   ForecastModelId,
   ForecastModelPerformance,
+  ForecastRecord,
   ForecastAsset,
   ForecastDecision,
   DirectionProbabilityCalibration,
@@ -21,6 +22,7 @@ import type {
 
 const MINIMUM_HISTORY = 31;
 const BACKTEST_WINDOW = 60;
+const WEEKLY_HORIZON_DAYS = 7;
 
 type ModelDefinition = {
   id: ForecastModelId;
@@ -140,6 +142,66 @@ export function evaluateForecastBenchmark(
     hasEdge: ensemble.meanAbsolutePercentError < bestBaseline.meanAbsolutePercentError &&
       ensemble.directionalAccuracy >= bestBaseline.directionalAccuracy
   };
+}
+
+export function evaluateWeeklyForecastBenchmark(candles: BitcoinCandle[]): ForecastBenchmark {
+  const startIndex = Math.max(MINIMUM_HISTORY + 12, candles.length - BACKTEST_WINDOW - WEEKLY_HORIZON_DAYS);
+  const ensembleOutcomes: ForecastOutcome[] = [];
+  const naiveOutcomes: ForecastOutcome[] = [];
+  const trendOutcomes: ForecastOutcome[] = [];
+
+  for (let index = startIndex; index < candles.length - WEEKLY_HORIZON_DAYS; index += 1) {
+    const history = candles.slice(0, index + 1);
+    const baseClose = history[history.length - 1].close;
+    const actualClose = candles[index + WEEKLY_HORIZON_DAYS].close;
+    const trendReturn = clamp(baseClose / history[history.length - WEEKLY_HORIZON_DAYS - 1].close - 1, -0.3, 0.3);
+
+    ensembleOutcomes.push(makeOutcome(baseClose, baseClose * (1 + buildWeeklySignalReturn(history)), actualClose));
+    naiveOutcomes.push(makeOutcome(baseClose, baseClose, actualClose));
+    trendOutcomes.push(makeOutcome(baseClose, baseClose * (1 + trendReturn), actualClose));
+  }
+
+  const ensemble = summarizeOutcomes(ensembleOutcomes);
+  const naive = summarizeOutcomes(naiveOutcomes);
+  const trend = summarizeOutcomes(trendOutcomes);
+  const bestBaseline = naive.meanAbsolutePercentError <= trend.meanAbsolutePercentError ? naive : trend;
+
+  return {
+    ensemble,
+    naive,
+    trend,
+    hasEdge: ensemble.meanAbsolutePercentError < bestBaseline.meanAbsolutePercentError &&
+      ensemble.directionalAccuracy >= bestBaseline.directionalAccuracy
+  };
+}
+
+export function buildWeeklySignalReturn(candles: BitcoinCandle[]) {
+  const closes = candles.map((candle) => candle.close);
+  const volumes = candles.map((candle) => candle.volume);
+  const currentClose = closes[closes.length - 1];
+  const trend = average(closes.slice(-7)) / average(closes.slice(-30)) - 1;
+  const macd = (calculateEma(closes, 12) - calculateEma(closes, 26)) / currentClose;
+  const rsi = calculateRsi(closes.slice(-15));
+  const dailyReturn = currentClose / closes[closes.length - 2] - 1;
+  const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
+  const volumeConfirmation = calculateVolumeConfirmation(dailyReturn, volumeRatio);
+
+  return clamp(
+    trend * 1.8 + macd * 1.35 - ((rsi - 50) / 100) * 0.035 + volumeConfirmation * 1.4,
+    -0.3,
+    0.3
+  );
+}
+
+export function shrinkReturnToBenchmark(
+  expectedReturn: number,
+  hasEdge: boolean,
+  horizon: "daily" | "weekly"
+) {
+  if (hasEdge) return expectedReturn;
+
+  // The carry-forward price is the benchmark until the model proves it can do better.
+  return expectedReturn * (horizon === "weekly" ? 0.15 : 0.35);
 }
 
 export function evaluateFeatureAblation(candles: BitcoinCandle[], asset: ForecastAsset = "BTC"): FeatureAblationResult[] {
@@ -325,12 +387,17 @@ export function detectMarketRegime(candles: BitcoinCandle[]): MarketRegime {
 }
 
 export function calculateRangeCalibration(
-  records: Array<{ horizon?: "daily" | "weekly"; lowerBound: number; upperBound: number; actualClose?: number }>,
-  horizon: "daily" | "weekly"
+  records: Array<Pick<ForecastRecord, "horizon" | "lowerBound" | "upperBound" | "actualClose" | "marketRegime">>,
+  horizon: "daily" | "weekly",
+  marketRegime?: MarketRegimeId
 ): RangeCalibration {
-  const settled = records
+  const settledByHorizon = records
     .filter((record) => (record.horizon ?? "daily") === horizon && record.actualClose !== undefined)
     .slice(-30);
+  const regimeSettled = marketRegime
+    ? settledByHorizon.filter((record) => record.marketRegime === marketRegime)
+    : [];
+  const settled = (regimeSettled.length >= 8 ? regimeSettled : settledByHorizon).slice(-30);
   const targetCoverage = 0.68;
 
   if (settled.length < 8) {
@@ -345,7 +412,7 @@ export function calculateRangeCalibration(
     settledCount: settled.length,
     observedCoverage,
     targetCoverage,
-    multiplier: clamp(1 + (targetCoverage - observedCoverage) * 1.5, 0.85, 1.45)
+    multiplier: clamp(1 + (targetCoverage - observedCoverage) * 1.5, 0.65, 1.45)
   };
 }
 

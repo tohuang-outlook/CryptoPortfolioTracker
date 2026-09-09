@@ -22,15 +22,19 @@ import {
   calculateRsi,
   calculateVolatility,
   clamp,
+  buildWeeklySignalReturn,
   evaluateFeatureAblation,
   evaluateForecastBenchmark,
-  getAutoExcludedFeatures
+  evaluateWeeklyForecastBenchmark,
+  getAutoExcludedFeatures,
+  shrinkReturnToBenchmark
 } from "./forecastModels";
 import { getDailyCandleHistory, fetchRecentHourlyCandles, parseCandleHistoryCache, type CandleHistoryCache } from "./candleHistoryService";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "./derivativesService";
 import { calculateOnChainAdjustment, fetchOnChainMetrics } from "./onChainService";
 import { getMacroEventRisk } from "./macroEventService";
 import { appendMicrostructureSnapshot, calculateMicrostructureAdjustment, fetchMicrostructureSnapshot } from "./microstructureService";
+import { FORECAST_EVALUATION_VERSION, isComparableForecastRecord, isUtcForecastCreationWindow } from "./forecastSchedule";
 
 const FORECAST_STORAGE_KEY = "crypto-portfolio-tracker-forecast-records-v2";
 const MICROSTRUCTURE_STORAGE_KEY = "crypto-portfolio-tracker-microstructure-v1";
@@ -70,12 +74,13 @@ export async function fetchAssetForecast(assetSymbol: ForecastAsset = "BTC"): Pr
   const snapshots = appendMicrostructureSnapshot(storedSnapshots, microstructure);
   await saveMicrostructureSnapshots(snapshots);
   const records = reconcileForecastRecords(recordsForAsset(allRecords, assetSymbol), candles);
+  const comparableRecords = records.filter(isComparableForecastRecord);
   const featureAblation = evaluateFeatureAblation(candles, assetSymbol);
   const excludedFeatures = getAutoExcludedFeatures(featureAblation);
   const forecast = buildForecast(
     candles,
-    records,
-    applyOpenInterestHistory(derivatives, records),
+    comparableRecords,
+    applyOpenInterestHistory(derivatives, comparableRecords),
     onChain,
     assetSymbol,
     btcCandles,
@@ -128,15 +133,12 @@ function buildForecast(
   const volatility = calculateVolatility(closes.slice(-15));
   const latestDailyReturn = currentClose / closes[closes.length - 2] - 1;
   const volumeRatio = volumes[volumes.length - 1] / average(volumes.slice(-21, -1));
-  const volumeConfirmation = calculateVolumeConfirmation(
-    latestDailyReturn,
-    volumeRatio
-  );
   const ensemble = buildDailyEnsemble(candles, assetSymbol, excludedFeatures);
   const multiTimeframe = buildMultiTimeframeSignal(hourlyCandles, candles);
   const benchmark = evaluateForecastBenchmark(candles, assetSymbol, excludedFeatures);
+  const weeklyBenchmark = evaluateWeeklyForecastBenchmark(candles);
   const latestCandle = candles[candles.length - 1];
-  const rangeCalibration = calculateRangeCalibration(records, "daily");
+  const rangeCalibration = calculateRangeCalibration(records, "daily", ensemble.marketRegime.id);
   const directionCalibration = calculateDirectionProbabilityCalibration(records);
   const correction = calculateBiasCorrection(records, "daily");
   const rawExpectedReturn = clamp(
@@ -149,7 +151,11 @@ function buildForecast(
   const rawDirection = rawExpectedReturn > 0.003 ? "Bullish" : rawExpectedReturn < -0.003 ? "Bearish" : "Neutral";
   const directionAgreement = directionModel.direction === rawDirection && rawDirection !== "Neutral";
   // A direction conflict does not flip the return model; it reduces its influence until the next close provides new evidence.
-  const expectedReturn = directionAgreement ? rawExpectedReturn : rawExpectedReturn * 0.45;
+  const expectedReturn = shrinkReturnToBenchmark(
+    directionAgreement ? rawExpectedReturn : rawExpectedReturn * 0.45,
+    benchmark.hasEdge,
+    "daily"
+  );
   const predictedClose = currentClose * (1 + expectedReturn);
   const asOfDate = latestCandle.date;
   const macroRisk = getMacroEventRisk(asOfDate);
@@ -170,7 +176,7 @@ function buildForecast(
         volatility * 450 -
         Math.abs(rsi14 - 50) * 0.28 +
         calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio) -
-        calibrationPenalty + (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty + multiTimeframe.confidenceAdjustment - (macroRisk?.confidencePenalty ?? 0) - (100 - dataQuality.score) * 0.18 - (directionAgreement ? 0 : 8) - (volatilityModel.outlook === "elevated" ? 4 : 0),
+        calibrationPenalty - (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty + multiTimeframe.confidenceAdjustment - (macroRisk?.confidencePenalty ?? 0) - (100 - dataQuality.score) * 0.18 - (directionAgreement ? 0 : 8) - (volatilityModel.outlook === "elevated" ? 4 : 0),
       38,
       78
     )
@@ -193,12 +199,11 @@ function buildForecast(
   });
   const weeklyForecast = buildWeeklyForecast({
     latestCandle,
-    trendPercent,
-    macdPercent,
-    rsi14,
-    volumeConfirmation,
+    candles,
     volatility,
-    records
+    records,
+    marketRegime: ensemble.marketRegime.id,
+    benchmark: weeklyBenchmark
   });
 
   const signals: ForecastSignal[] = [
@@ -363,11 +368,13 @@ function upsertForecastRecords(
   forecast: Omit<BitcoinForecast, "assetSymbol" | "assetName" | "records" | "accuracy" | "weeklyAccuracy" | "confidenceCalibration">,
   assetSymbol: ForecastAsset
 ): ForecastRecord[] {
+  const evaluationVersion = FORECAST_EVALUATION_VERSION;
   const dailyRecord: ForecastRecord = {
     assetSymbol,
     horizon: "daily",
     targetDate: forecast.targetDate,
     createdAt: new Date().toISOString(),
+    evaluationVersion,
     baseClose: forecast.currentClose,
     predictedClose: forecast.predictedClose,
     lowerBound: forecast.lowerBound,
@@ -393,6 +400,7 @@ function upsertForecastRecords(
     horizon: "weekly",
     targetDate: forecast.weeklyForecast.targetDate,
     createdAt: new Date().toISOString(),
+    evaluationVersion,
     baseClose: forecast.currentClose,
     predictedClose: forecast.weeklyForecast.predictedClose,
     lowerBound: forecast.weeklyForecast.lowerBound,
@@ -403,6 +411,10 @@ function upsertForecastRecords(
     expectedReturnPercent: forecast.weeklyForecast.expectedReturnPercent
   };
 
+  if (!isUtcForecastCreationWindow()) {
+    return records;
+  }
+
   return upsertForecastRecord(upsertForecastRecord(records, dailyRecord), weeklyRecord).slice(-180);
 }
 
@@ -412,11 +424,7 @@ function upsertForecastRecord(records: ForecastRecord[], record: ForecastRecord)
   );
   const nextRecords = [...records];
 
-  if (existingIndex === -1) {
-    nextRecords.push(record);
-  } else if (nextRecords[existingIndex].actualClose === undefined) {
-    nextRecords[existingIndex] = record;
-  }
+  if (existingIndex === -1) nextRecords.push(record);
 
   return nextRecords;
 }
@@ -600,32 +608,28 @@ function calculateMarketLinkAdjustment(asset: ForecastAsset, btcCandles: Bitcoin
 
 function buildWeeklyForecast({
   latestCandle,
-  trendPercent,
-  macdPercent,
-  rsi14,
-  volumeConfirmation,
+  candles,
   volatility,
-  records
+  records,
+  marketRegime,
+  benchmark
 }: {
   latestCandle: BitcoinCandle;
-  trendPercent: number;
-  macdPercent: number;
-  rsi14: number;
-  volumeConfirmation: number;
+  candles: BitcoinCandle[];
   volatility: number;
   records: ForecastRecord[];
+  marketRegime: BitcoinForecast["marketRegime"]["id"];
+  benchmark: BitcoinForecast["benchmark"];
 }): ForecastHorizon {
   const correction = calculateBiasCorrection(records, "weekly");
-  const rangeCalibration = calculateRangeCalibration(records, "weekly");
-  const expectedReturn = clamp(
-    trendPercent * 1.8 +
-      macdPercent * 1.35 -
-      ((rsi14 - 50) / 100) * 0.035 +
-      volumeConfirmation * 1.4 +
-      correction,
-    -0.3,
-    0.3
+  const rangeCalibration = calculateRangeCalibration(records, "weekly", marketRegime);
+  const expectedReturn = shrinkReturnToBenchmark(
+    clamp(buildWeeklySignalReturn(candles) + correction, -0.3, 0.3),
+    benchmark.hasEdge,
+    "weekly"
   );
+  const closes = candles.map((candle) => candle.close);
+  const rsi14 = calculateRsi(closes.slice(-15));
   const predictedClose = latestCandle.close * (1 + expectedReturn);
   const rangePercent = clamp(volatility * Math.sqrt(7) * 1.7 * rangeCalibration.multiplier, 0.07, 0.32);
   const confidence = Math.round(
@@ -654,14 +658,6 @@ function buildWeeklyForecast({
 function getRecordHorizon(record: ForecastRecord) {
   // Forecast records saved before weekly support are daily forecasts.
   return record.horizon ?? "daily";
-}
-
-function calculateVolumeConfirmation(dailyReturn: number, volumeRatio: number) {
-  if (Math.abs(dailyReturn) < 0.002 || volumeRatio <= 1) {
-    return 0;
-  }
-
-  return Math.sign(dailyReturn) * clamp((volumeRatio - 1) * 0.012, 0, 0.024);
 }
 
 function calculateVolumeConfidenceAdjustment(
