@@ -31,7 +31,7 @@ import {
 } from "./forecastModels";
 import { getDailyCandleHistory, fetchRecentHourlyCandles, parseCandleHistoryCache, type CandleHistoryCache } from "./candleHistoryService";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "./derivativesService";
-import { calculateOnChainAdjustment, fetchOnChainMetrics } from "./onChainService";
+import { buildOnChainRegime, calculateOnChainAdjustment, fetchOnChainMetrics } from "./onChainService";
 import { getMacroEventRisk } from "./macroEventService";
 import { appendMicrostructureSnapshot, calculateMicrostructureAdjustment, fetchMicrostructureSnapshot } from "./microstructureService";
 import { FORECAST_EVALUATION_VERSION, isComparableForecastRecord, isUtcForecastCreationWindow } from "./forecastSchedule";
@@ -137,6 +137,7 @@ function buildForecast(
   const multiTimeframe = buildMultiTimeframeSignal(hourlyCandles, candles);
   const benchmark = evaluateForecastBenchmark(candles, assetSymbol, excludedFeatures);
   const weeklyBenchmark = evaluateWeeklyForecastBenchmark(candles);
+  const onChainRegime = buildOnChainRegime(onChain);
   const latestCandle = candles[candles.length - 1];
   const rangeCalibration = calculateRangeCalibration(records, "daily", ensemble.marketRegime.id);
   const directionCalibration = calculateDirectionProbabilityCalibration(records);
@@ -165,7 +166,7 @@ function buildForecast(
     modelDispersion: ensemble.modelDispersion,
     marketRegime: ensemble.marketRegime.id,
     calibrationMultiplier: rangeCalibration.multiplier,
-    macroMultiplier: macroRisk?.rangeMultiplier ?? 1
+    macroMultiplier: (macroRisk?.rangeMultiplier ?? 1) * onChainRegime.rangeMultiplier
   });
   const calibrationPenalty = rangeCalibration.observedCoverage === null
     ? 0
@@ -176,7 +177,7 @@ function buildForecast(
         volatility * 450 -
         Math.abs(rsi14 - 50) * 0.28 +
         calculateVolumeConfidenceAdjustment(latestDailyReturn, volumeRatio) -
-        calibrationPenalty - (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty + multiTimeframe.confidenceAdjustment - (macroRisk?.confidencePenalty ?? 0) - (100 - dataQuality.score) * 0.18 - (directionAgreement ? 0 : 8) - (volatilityModel.outlook === "elevated" ? 4 : 0),
+        calibrationPenalty - (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty + multiTimeframe.confidenceAdjustment - (macroRisk?.confidencePenalty ?? 0) - onChainRegime.confidencePenalty - (100 - dataQuality.score) * 0.18 - (directionAgreement ? 0 : 8) - (volatilityModel.outlook === "elevated" ? 4 : 0),
       38,
       78
     )
@@ -203,7 +204,8 @@ function buildForecast(
     volatility,
     records,
     marketRegime: ensemble.marketRegime.id,
-    benchmark: weeklyBenchmark
+    benchmark: weeklyBenchmark,
+    onChainRegime
   });
 
   const signals: ForecastSignal[] = [
@@ -271,9 +273,15 @@ function buildForecast(
           : `Open interest changed ${(derivatives.openInterestChange7Day * 100).toFixed(1)}% over 7 days.`
         : "Derivative data is temporarily unavailable, so this signal has no weight."
     },
+    ...(assetSymbol === "BTC" ? [{
+      label: "BTC on-chain regime",
+      value: onChainRegime.label,
+      direction: onChainRegime.id === "accumulation" ? "positive" : onChainRegime.id === "distribution" || onChainRegime.id === "capitulation" ? "negative" : "neutral" as ForecastSignal["direction"],
+      detail: onChainRegime.detail
+    }] : []),
     {
       label: "On-chain activity",
-      value: onChain ? `${(onChain.activeAddressesChange7Day * 100).toFixed(1)}% active addresses` : "Unavailable",
+      value: onChain ? `${(onChain.activeAddressesChange7Day * 100).toFixed(1)}% active addresses${onChain.mvrv === null ? "" : ` · MVRV ${onChain.mvrv.toFixed(2)}`}` : "Unavailable",
       direction: onChain && onChain.activeAddressesChange7Day > 0.05 && onChain.transactionCountChange7Day > 0 ? "positive" : onChain && onChain.activeAddressesChange7Day < -0.05 && onChain.transactionCountChange7Day < 0 ? "negative" : "neutral",
       detail: onChain
         ? `Active addresses changed ${(onChain.activeAddressesChange7Day * 100).toFixed(1)}% and transactions changed ${(onChain.transactionCountChange7Day * 100).toFixed(1)}% versus the prior 7-day average.`
@@ -342,6 +350,7 @@ function buildForecast(
     rangeCalibration,
     derivatives,
     onChain,
+    onChainRegime,
     microstructure,
     microstructureSamples: microstructureSnapshots.length,
     featureAblation,
@@ -388,6 +397,7 @@ function upsertForecastRecords(
     ),
     derivativeData: forecast.derivatives ?? undefined,
     onChainData: forecast.onChain ?? undefined,
+    onChainRegime: forecast.onChainRegime,
     microstructureData: forecast.microstructure ?? undefined,
     hasForecastEdge: forecast.benchmark.hasEdge,
     multiTimeframe: forecast.multiTimeframe,
@@ -407,6 +417,7 @@ function upsertForecastRecords(
     upperBound: forecast.weeklyForecast.upperBound,
     confidence: forecast.weeklyForecast.confidence,
     marketRegime: forecast.marketRegime.id,
+    onChainRegime: forecast.onChainRegime,
     direction: forecast.weeklyForecast.direction,
     expectedReturnPercent: forecast.weeklyForecast.expectedReturnPercent
   };
@@ -612,7 +623,8 @@ function buildWeeklyForecast({
   volatility,
   records,
   marketRegime,
-  benchmark
+  benchmark,
+  onChainRegime
 }: {
   latestCandle: BitcoinCandle;
   candles: BitcoinCandle[];
@@ -620,6 +632,7 @@ function buildWeeklyForecast({
   records: ForecastRecord[];
   marketRegime: BitcoinForecast["marketRegime"]["id"];
   benchmark: BitcoinForecast["benchmark"];
+  onChainRegime: BitcoinForecast["onChainRegime"];
 }): ForecastHorizon {
   const correction = calculateBiasCorrection(records, "weekly");
   const rangeCalibration = calculateRangeCalibration(records, "weekly", marketRegime);
@@ -631,10 +644,10 @@ function buildWeeklyForecast({
   const closes = candles.map((candle) => candle.close);
   const rsi14 = calculateRsi(closes.slice(-15));
   const predictedClose = latestCandle.close * (1 + expectedReturn);
-  const rangePercent = clamp(volatility * Math.sqrt(7) * 1.7 * rangeCalibration.multiplier, 0.07, 0.32);
+  const rangePercent = clamp(volatility * Math.sqrt(7) * 1.7 * rangeCalibration.multiplier * onChainRegime.rangeMultiplier, 0.07, 0.32);
   const confidence = Math.round(
     clamp(
-      66 - volatility * 520 - Math.abs(rsi14 - 50) * 0.36 -
+      66 - volatility * 520 - Math.abs(rsi14 - 50) * 0.36 - onChainRegime.confidencePenalty -
         (rangeCalibration.observedCoverage === null ? 0 : Math.abs(rangeCalibration.observedCoverage - rangeCalibration.targetCoverage) * 28),
       32,
       70

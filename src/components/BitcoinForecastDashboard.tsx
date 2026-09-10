@@ -157,6 +157,12 @@ export function BitcoinForecastDashboard() {
           <p>{t(forecast.marketRegime.detail)}</p>
           <span className={`forecast-status-card__tag forecast-status-card__tag--${forecast.marketRegime.id}`}>{t("Weights are tuned for this market state")}</span>
         </article>
+        {forecast.assetSymbol === "BTC" && <article className="panel forecast-status-card">
+          <p className="panel__eyebrow">{t("BTC on-chain regime")}</p>
+          <h2>{t(forecast.onChainRegime.label)}</h2>
+          <p>{t(forecast.onChainRegime.detail)}</p>
+          <span className="forecast-status-card__tag">{forecast.onChain?.mvrv === null || !forecast.onChain ? t("MVRV unavailable") : `MVRV ${forecast.onChain.mvrv.toFixed(2)} · ${shortDate(forecast.onChain.asOfDate, language)}`}</span>
+        </article>}
         <article className="panel forecast-status-card">
           <p className="panel__eyebrow">{t("Regime reliability")}</p>
           <h2>{forecast.regimeReliability.isValidated ? t("Validated") : t("Learning")}</h2>

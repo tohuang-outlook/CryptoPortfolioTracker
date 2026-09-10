@@ -28,6 +28,7 @@ export interface ForecastRecord {
   modelWeights?: Partial<Record<ForecastModelId, number>>;
   derivativeData?: DerivativeMarketData;
   onChainData?: OnChainMarketData;
+  onChainRegime?: OnChainRegime;
   microstructureData?: MicrostructureSnapshot;
   hasForecastEdge?: boolean;
   multiTimeframe?: MultiTimeframeSignal;
@@ -150,12 +151,25 @@ export interface DerivativeMarketData {
 }
 
 export interface OnChainMarketData {
+  assetSymbol: ForecastAsset;
   activeAddresses: number;
   transactionCount: number;
   totalFeesNative: number;
   activeAddressesChange7Day: number;
   transactionCountChange7Day: number;
+  mvrv: number | null;
+  mvrvChange30Day: number | null;
   asOfDate: string;
+}
+
+export type OnChainRegimeId = "accumulation" | "neutral" | "distribution" | "capitulation" | "unavailable";
+
+export interface OnChainRegime {
+  id: OnChainRegimeId;
+  label: string;
+  detail: string;
+  rangeMultiplier: number;
+  confidencePenalty: number;
 }
 
 export interface MicrostructureSnapshot {
@@ -229,6 +243,7 @@ export interface BitcoinForecast {
   rangeCalibration: RangeCalibration;
   derivatives: DerivativeMarketData | null;
   onChain: OnChainMarketData | null;
+  onChainRegime: OnChainRegime;
   microstructure: MicrostructureSnapshot | null;
   microstructureSamples: number;
   featureAblation: FeatureAblationResult[];

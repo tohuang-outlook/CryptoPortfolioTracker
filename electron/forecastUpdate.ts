@@ -24,7 +24,7 @@ import {
 import { fetchRecentHourlyCandles, getDailyCandleHistory, parseCandleHistoryCache, type CandleHistoryCache } from "../src/data/candleHistoryService.js";
 import { detectForecastAlerts, type ForecastAlert } from "../src/data/forecastAlerts.js";
 import { applyOpenInterestHistory, fetchAssetDerivatives } from "../src/data/derivativesService.js";
-import { calculateOnChainAdjustment, fetchOnChainMetrics } from "../src/data/onChainService.js";
+import { buildOnChainRegime, calculateOnChainAdjustment, fetchOnChainMetrics } from "../src/data/onChainService.js";
 import { appendMicrostructureSnapshot, calculateMicrostructureAdjustment, fetchMicrostructureSnapshot } from "../src/data/microstructureService.js";
 import { FORECAST_EVALUATION_VERSION, isComparableForecastRecord, isUtcForecastCreationWindow } from "../src/data/forecastSchedule.js";
 import type { DerivativeMarketData, DirectionModelForecast, ForecastAsset, ForecastDecision, MicrostructureSnapshot, MultiTimeframeSignal, RegimeReliability } from "../src/types/forecast.js";
@@ -63,6 +63,7 @@ interface RecordItem {
   modelWeights?: Partial<Record<"technical" | "trend" | "meanReversion", number>>;
   derivativeData?: DerivativeMarketData;
   onChainData?: import("../src/types/forecast.js").OnChainMarketData;
+  onChainRegime?: import("../src/types/forecast.js").OnChainRegime;
   microstructureData?: MicrostructureSnapshot;
   hasForecastEdge?: boolean;
   multiTimeframe?: MultiTimeframeSignal;
@@ -152,6 +153,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
   const multiTimeframe = buildMultiTimeframeSignal(hourlyCandles, candles);
   const benchmark = evaluateForecastBenchmark(candles, assetSymbol, excludedFeatures);
   const weeklyBenchmark = evaluateWeeklyForecastBenchmark(candles);
+  const onChainRegime = buildOnChainRegime(onChain ?? null);
   const dailyCalibration = calculateRangeCalibration(comparableRecords, "daily", ensemble.marketRegime.id);
   const weeklyCalibration = calculateRangeCalibration(comparableRecords, "weekly", ensemble.marketRegime.id);
   const directionCalibration = calculateDirectionProbabilityCalibration(comparableRecords);
@@ -180,7 +182,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
   const dailyConfidence = Math.round(clamp(
     72 - volatility * 450 - Math.abs(rsi - 50) * 0.28 + volumeConfidence(dailyReturn, volumeRatio) + multiTimeframe.confidenceAdjustment -
       (dailyCalibration.observedCoverage === null ? 0 : Math.abs(dailyCalibration.observedCoverage - dailyCalibration.targetCoverage) * 30) -
-      (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty - (directionModel.direction === rawDirection ? 0 : 8) - (volatilityModel.outlook === "elevated" ? 4 : 0),
+      (benchmark.hasEdge ? 0 : 12) - ensemble.confidencePenalty - onChainRegime.confidencePenalty - (directionModel.direction === rawDirection ? 0 : 8) - (volatilityModel.outlook === "elevated" ? 4 : 0),
     38,
     78
   ));
@@ -206,7 +208,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
       volatility: Math.max(volatility, volatilityModel.expectedDailyMovePercent / 100),
       modelDispersion: ensemble.modelDispersion,
       marketRegime: ensemble.marketRegime.id,
-      calibrationMultiplier: dailyCalibration.multiplier
+      calibrationMultiplier: dailyCalibration.multiplier * onChainRegime.rangeMultiplier
     }),
     confidence: dailyConfidence,
     marketRegime: ensemble.marketRegime.id,
@@ -215,6 +217,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
     modelWeights: Object.fromEntries(ensemble.leaderboard.map((model) => [model.id, model.weight])),
     derivativeData: derivatives ?? undefined,
     onChainData: onChain ?? undefined,
+    onChainRegime,
     microstructureData: microstructure ?? undefined,
     hasForecastEdge: benchmark.hasEdge,
     multiTimeframe,
@@ -228,14 +231,15 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
     targetDate: toDate(latest.timestamp + 7 * DAY_IN_MS),
     baseClose: currentClose,
     expectedReturn: weeklyExpectedReturn,
-    rangePercent: clamp(volatility * Math.sqrt(7) * 1.7 * weeklyCalibration.multiplier, 0.07, 0.32),
+    rangePercent: clamp(volatility * Math.sqrt(7) * 1.7 * weeklyCalibration.multiplier * onChainRegime.rangeMultiplier, 0.07, 0.32),
     confidence: Math.round(clamp(
-      66 - volatility * 520 - Math.abs(rsi - 50) * 0.36 -
+      66 - volatility * 520 - Math.abs(rsi - 50) * 0.36 - onChainRegime.confidencePenalty -
         (weeklyCalibration.observedCoverage === null ? 0 : Math.abs(weeklyCalibration.observedCoverage - weeklyCalibration.targetCoverage) * 28),
       32,
       70
     )),
     marketRegime: ensemble.marketRegime.id,
+    onChainRegime,
     direction: getDirection(weeklyExpectedReturn, 0.012),
     expectedReturnPercent: weeklyExpectedReturn * 100
   });
@@ -247,7 +251,7 @@ function upsertForecasts(records: RecordItem[], candles: Candle[], hourlyCandles
   return upsertRecord(upsertRecord(records, dailyPrediction), weeklyPrediction).slice(-180);
 }
 
-function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedReturn, rangePercent, confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, microstructureData, hasForecastEdge, multiTimeframe, directionModel, regimeReliability, decision }: {
+function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedReturn, rangePercent, confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, onChainRegime, microstructureData, hasForecastEdge, multiTimeframe, directionModel, regimeReliability, decision }: {
   assetSymbol: ForecastAsset;
   horizon: "daily" | "weekly";
   targetDate: string;
@@ -262,6 +266,7 @@ function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedRetur
   derivativeData?: RecordItem["derivativeData"];
   hasForecastEdge?: boolean;
   onChainData?: RecordItem["onChainData"];
+  onChainRegime?: RecordItem["onChainRegime"];
   microstructureData?: MicrostructureSnapshot;
   multiTimeframe?: MultiTimeframeSignal;
   directionModel?: DirectionModelForecast;
@@ -269,7 +274,7 @@ function makeRecord({ assetSymbol, horizon, targetDate, baseClose, expectedRetur
   decision?: ForecastDecision;
 }): RecordItem {
   const predictedClose = baseClose * (1 + expectedReturn);
-  return { assetSymbol, horizon, targetDate, createdAt: new Date().toISOString(), evaluationVersion: FORECAST_EVALUATION_VERSION, baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, microstructureData, hasForecastEdge, multiTimeframe, directionModel, regimeReliability, decision };
+  return { assetSymbol, horizon, targetDate, createdAt: new Date().toISOString(), evaluationVersion: FORECAST_EVALUATION_VERSION, baseClose, predictedClose, lowerBound: predictedClose * (1 - rangePercent), upperBound: predictedClose * (1 + rangePercent), confidence, marketRegime, direction, expectedReturnPercent, modelWeights, derivativeData, onChainData, onChainRegime, microstructureData, hasForecastEdge, multiTimeframe, directionModel, regimeReliability, decision };
 }
 
 function upsertRecord(records: RecordItem[], record: RecordItem) {
